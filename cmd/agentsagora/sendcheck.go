@@ -261,9 +261,13 @@ type inboxFilter struct {
 	after  time.Time // messages at or after this time
 	from   string    // current sender name
 	thread int64     // thread of this message id
+	sent   bool      // the caller's own sends instead of messages to the caller
+	tags   []string  // messages with any of these tags
 }
 
-func (f inboxFilter) empty() bool { return f.after.IsZero() && f.from == "" && f.thread == 0 }
+func (f inboxFilter) empty() bool {
+	return f.after.IsZero() && f.from == "" && f.thread == 0 && !f.sent && len(f.tags) == 0
+}
 
 // parseSinceTime reads RFC3339, or HH:MM as today in JST (by now).
 func parseSinceTime(s string, now time.Time) (time.Time, error) {
@@ -320,7 +324,13 @@ func (s *store) threadSet(root int64) map[int64]bool {
 
 // inboxFiltered is store.inbox narrowed by f (never wider: a filter only drops messages).
 func (sv *server) inboxFiltered(member string, since int64, chs []string, nt nameTable, f inboxFilter) ([]Message, <-chan struct{}) {
-	msgs, ch := sv.store.inbox(member, since, chs, nt)
+	var msgs []Message
+	var ch <-chan struct{}
+	if f.sent {
+		msgs, ch = sv.store.sent(member, since, chs, nt)
+	} else {
+		msgs, ch = sv.store.inbox(member, since, chs, nt)
+	}
 	if f.empty() {
 		return msgs, ch
 	}
@@ -331,6 +341,9 @@ func (sv *server) inboxFiltered(member string, since int64, chs []string, nt nam
 	out := msgs[:0]
 	for _, m := range msgs {
 		if f.from != "" && m.From != f.from {
+			continue
+		}
+		if !hasAnyTag(m, f.tags) {
 			continue
 		}
 		if set != nil && !set[m.ID] {

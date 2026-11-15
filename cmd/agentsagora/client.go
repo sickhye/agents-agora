@@ -162,7 +162,7 @@ func formatLine(m Message) string {
 	if m.Kind != "" { // [log] [status] [digest] [reminder]; plain lines unchanged
 		re += " [" + m.Kind + "]"
 	}
-	return fmt.Sprintf("[a2] #%d [%s] %s %s -> %s%s: %s", m.ID, channelLabel(m.Channel), m.TS, m.From, m.To, re, t)
+	return fmt.Sprintf("[a2] #%d [%s] %s %s -> %s%s%s: %s", m.ID, channelLabel(m.Channel), m.TS, m.From, m.To, tagSuffix(m), re, t)
 }
 
 // logLineMax is the text length (runes) of a "[log]" line in a2 watch.
@@ -178,7 +178,7 @@ func watchLine(m Message) string {
 	if r := []rune(t); len(r) > logLineMax {
 		t = string(r[:logLineMax-1]) + "…"
 	}
-	return fmt.Sprintf("[a2] [log] #%d %s: %s", m.ID, m.From, t)
+	return fmt.Sprintf("[a2] [log] #%d %s%s: %s", m.ID, m.From, tagSuffix(m), t)
 }
 
 // yourChannels asks the server for the caller's channels (GET /members, 3 s); the client
@@ -206,11 +206,12 @@ func cmdSend(args []string) error {
 	replyTo := fs.Int64("reply-to", 0, "reply in the thread of this message id (same channel)")
 	logOnly := fs.Bool("log-only", false, "a record (hand-off add/done and the like): a2 watch shows it as one short [log] line")
 	status := fs.Bool("status", false, "a status line: the server may batch it with your other status lines into one digest (OUTCOME: problem / BLOCK / blocked go out at once)")
+	tag := fs.String("tag", "", "comma separated labels for the message (up to 5; lowercase a-z 0-9 and -, 1 to 24 characters), e.g. approval,blog")
 	needsReply := fs.Bool("needs-reply", false, "one recipient: if no reply in this thread comes back --within, the server sends one reminder to both of you")
 	within := fs.Duration("within", 30*time.Minute, "with --needs-reply: time to wait for the reply (1m to 168h)")
 	fs.Usage = func() {
 		out := fs.Output()
-		fmt.Fprintln(out, "usage: a2 send --to <member|all> [--channel C] [--reply-to ID] [--log-only | --status | --needs-reply [--within 30m]] <text|->")
+		fmt.Fprintln(out, "usage: a2 send --to <member|all> [--channel C] [--reply-to ID] [--tag t1,t2] [--log-only | --status | --needs-reply [--within 30m]] <text|->")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -223,7 +224,10 @@ func cmdSend(args []string) error {
 	if *to == "" || fs.NArg() != 1 {
 		return usageError(`send needs --to <member|all> and one text argument ("-" reads stdin)`)
 	}
-	req := sendReq{Channel: *channel, To: *to, ReplyTo: *replyTo}
+	req := sendReq{Channel: *channel, To: *to, ReplyTo: *replyTo, Tags: splitTags(*tag)}
+	if _, err := normalizeTags(req.Tags); err != nil {
+		return usageError(err.Error())
+	}
 	if err := sendKindFlags(&req, *logOnly, *status, *needsReply, *within, withinSet(fs)); err != nil {
 		return err
 	}
@@ -315,6 +319,9 @@ func sendResult(req sendReq, m Message) string {
 	if req.Kind != "" && m.Kind == "" && m.Queued == "" {
 		fmt.Fprintln(os.Stderr, "a2: notice: the server is older and ignored --"+map[string]string{kindLog: "log-only", kindStatus: "status"}[req.Kind]+" (sent as a plain message)")
 	}
+	if len(req.Tags) > 0 && len(m.Tags) == 0 && m.Queued == "" {
+		fmt.Fprintln(os.Stderr, "a2: notice: the server is older and ignored --tag (stored without tags)")
+	}
 	if req.NeedsReplySec > 0 && m.ReplyBy == "" {
 		fmt.Fprintln(os.Stderr, "a2: notice: the server is older and ignored --needs-reply (no reminder)")
 	}
@@ -329,11 +336,13 @@ func cmdInbox(args []string) error {
 	sinceS := fs.String("since", "", "filter: after message id N, or from a time (RFC3339, or HH:MM today in JST)")
 	from := fs.String("from", "", "filter: only messages from this member (or a2-system)")
 	thread := fs.Int64("thread", 0, "filter: this message and every reply in its thread")
+	sent := fs.Bool("sent", false, "read-only: list the messages you sent yourself (cursor kept)")
+	tag := fs.String("tag", "", "filter: only messages with any of these comma separated tags")
 	if err := fs.Parse(args); err != nil {
 		return usageError(err.Error())
 	}
 	// filters search the whole inbox and leave the cursor alone (sendcheck.go)
-	filtered := *sinceS != "" || *from != "" || *thread != 0
+	filtered := *sinceS != "" || *from != "" || *thread != 0 || *sent || *tag != ""
 	var sinceID int64
 	var sinceTime string
 	if *sinceS != "" {
@@ -347,6 +356,9 @@ func cmdInbox(args []string) error {
 	}
 	if *thread < 0 {
 		return usageError("bad --thread")
+	}
+	if _, err := parseTagFilter(splitTags(*tag)); err != nil {
+		return usageError(err.Error())
 	}
 	c, err := newClient()
 	if err != nil {
@@ -365,6 +377,12 @@ func cmdInbox(args []string) error {
 				q.Set(k, v)
 			}
 		}
+		if *sent {
+			q.Set("sent", "1")
+		}
+		if *tag != "" {
+			q.Set("tag", *tag)
+		}
 		if *thread != 0 {
 			q.Set("thread", strconv.FormatInt(*thread, 10))
 		}
@@ -376,7 +394,7 @@ func cmdInbox(args []string) error {
 			return err
 		}
 		// since=<id> is an old parameter; the others need a server that applies them
-		if !fr.Filtered && (sinceTime != "" || *from != "" || *thread != 0) {
+		if !fr.Filtered && (sinceTime != "" || *from != "" || *thread != 0 || *sent || *tag != "") {
 			return errors.New("the server does not support inbox filters yet (needs a newer server)")
 		}
 		r = fr.inboxResp

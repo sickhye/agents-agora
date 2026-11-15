@@ -330,6 +330,20 @@ func (sv *server) handleViewMessages(w http.ResponseWriter, r *http.Request) {
 	} else {
 		all = sv.store.after(since)
 	}
+	if tv := q.Get("tag"); tv != "" { // only messages with any of these tags
+		tl, err := parseTagFilter(splitTags(tv))
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		kept := make([]Message, 0, len(all))
+		for _, m := range all {
+			if hasAnyTag(m, tl) {
+				kept = append(kept, m)
+			}
+		}
+		all = kept
+	}
 	truncated := len(all) > viewMaxMessages
 	if truncated {
 		all = all[len(all)-viewMaxMessages:]

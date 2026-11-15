@@ -45,6 +45,7 @@ const (
 type sendOpts struct {
 	kind   string        // "", kindLog or kindStatus
 	within time.Duration // needs-reply time (0 = none)
+	tags   []string      // labels (tags.go)
 }
 
 func (o sendOpts) check() error {

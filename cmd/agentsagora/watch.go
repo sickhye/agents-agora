@@ -150,6 +150,7 @@ type watcher struct {
 	tickPath  string
 	tickEvery time.Duration
 	tickNow   func() time.Time
+	tags      []string // print only messages with any of these tags (cursor still moves past the others)
 }
 
 const defaultBacklogMax = 20
@@ -174,6 +175,11 @@ func newWatcher(c *client, channel string, wait int, args []string) *watcher {
 func (wt *watcher) setChannel(channel string) {
 	wt.channel = channel
 	wt.cp, wt.inboxCp = watchCursor(wt.c.cursor, channel), channelCursor(wt.c.cursor, channel)
+	if len(wt.tags) > 0 {
+		// own cursor per tag set, and the a2 inbox cursor is left alone: the unprinted messages are still unread
+		wt.cp = watchCursor(wt.c.cursor+"-tag-"+strings.Join(wt.tags, "+"), channel)
+		wt.holdInbox = true
+	}
 	wt.last = readCursor(wt.cp)
 }
 
@@ -211,7 +217,9 @@ func (wt *watcher) show(m Message) error {
 	if m.ID <= wt.last {
 		return nil
 	}
-	fmt.Fprintln(wt.out, watchLine(m))
+	if hasAnyTag(m, wt.tags) {
+		fmt.Fprintln(wt.out, watchLine(m))
+	}
 	wt.last = m.ID
 	if err := writeCursor(wt.cp, m.ID); err != nil {
 		return err
@@ -259,8 +267,16 @@ func (wt *watcher) start(ctx context.Context) error {
 	}
 	ms := r.Messages
 	cur := base
-	if len(ms) > 0 && (!have || len(ms) > wt.backlogMax) {
-		fmt.Fprintln(wt.out, backlogSummary(ms, base, wt.channel))
+	var shown []Message
+	for _, m := range ms {
+		if hasAnyTag(m, wt.tags) {
+			shown = append(shown, m)
+		}
+	}
+	if len(shown) > 0 && (!have || len(shown) > wt.backlogMax) || len(wt.tags) > 0 && !have {
+		if len(shown) > 0 {
+			fmt.Fprintln(wt.out, backlogSummary(shown, base, wt.channel))
+		}
 		for _, m := range ms {
 			cur = max(cur, m.ID)
 		}
@@ -480,6 +496,7 @@ func cmdWatch(args []string) error {
 	channel := fs.String("channel", "", "only this channel (own cursor); default: all your channels")
 	tickFile := fs.String("tick-file", "", "liveness stamp file, written at start and every 60 s (default: $XDG_STATE_HOME/agentsagora/watch-tick-<channel|all>; off = none)")
 	fromStart := fs.Bool("from-start", false, "with no cursor file yet, print the whole history from id 1 (default: start at the newest message)")
+	tag := fs.String("tag", "", "print only messages with any of these comma separated tags (own resume cursor; the a2 inbox cursor is not moved)")
 	backlog := fs.Int("backlog", defaultBacklogMax, "with a cursor, print up to this many waiting messages in full; more (or no cursor at all) gives one summary line (a2 inbox has the full text)")
 	if err := fs.Parse(args); err != nil {
 		return usageError(err.Error())
@@ -488,7 +505,13 @@ func cmdWatch(args []string) error {
 	if err != nil {
 		return err
 	}
+	tags, err := parseTagFilter(splitTags(*tag))
+	if err != nil {
+		return usageError(err.Error())
+	}
 	wt := newWatcher(c, *channel, *wait, args)
+	wt.tags = tags
+	wt.setChannel(*channel)
 	wt.fromStart = *fromStart
 	wt.backlogMax = max(*backlog, 0)
 	wt.tickPath = *tickFile

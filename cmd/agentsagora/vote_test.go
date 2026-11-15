@@ -77,7 +77,7 @@ func openVote(t *testing.T, f *fixture, who string, req voteNewReq) (int64, int6
 func TestVoteYesNoPassAndFail(t *testing.T) {
 	f := setup(t)
 	clk := fakeClock(f.sv, time.Now())
-	id, mid := openVote(t, f, "alice", voteNewReq{Channel: "team", Question: "Build the vote feature?"})
+	id, mid := openVoteOld(t, f, "alice", voteNewReq{Channel: "team", Question: "Build the vote feature?"})
 	if id != 1 {
 		t.Fatalf("first vote id %d", id)
 	}
@@ -91,26 +91,27 @@ func TestVoteYesNoPassAndFail(t *testing.T) {
 	if !strings.HasPrefix(formatLine(Message{ID: mid, Channel: "team", TS: "x", From: "alice", To: "all", Text: ms[0]["text"].(string)}), "[a2] #") {
 		t.Fatal("line format")
 	}
-	mustCast(t, f, id, "yes", "alice", "dave", "bob") // the proposer may vote
+	mustCast(t, f, id, "yes", "alice", "dave") // the proposer may vote
 	mustCast(t, f, id, "no", "carol")
-	id2, _ := openVote(t, f, "dave", voteNewReq{Channel: "team", Question: "Only two yes"})
+	mustCast(t, f, id, "yes", "bob") // 3rd yes: early close
+	id2, _ := openVoteOld(t, f, "dave", voteNewReq{Channel: "team", Question: "Only two yes"})
 	mustCast(t, f, id2, "yes", "dave", "bob")
-	id3, _ := openVote(t, f, "dave", voteNewReq{Channel: "team", Question: "yes not above no", Hours: 2})
-	mustCast(t, f, id3, "yes", "dave", "bob", "alice")
-	mustCast(t, f, id3, "no", "carol")
-	// voting again replaces: three yes, then two of them switch to no
-	mustCast(t, f, id3, "no", "bob", "alice")
+	id3, _ := openVoteOld(t, f, "dave", voteNewReq{Channel: "team", Question: "yes not above no", Hours: 2})
+	mustCast(t, f, id3, "yes", "dave", "bob")
+	mustCast(t, f, id3, "no", "carol", "alice")
+	// voting again replaces: bob switches from yes to no
+	mustCast(t, f, id3, "no", "bob")
 	_, out := f.req(t, "GET", fmt.Sprint("/votes/", id3), f.tokens["dave"], nil)
 	if v := voteOf(t, out); v["counts"].(map[string]any)["yes"] != 1.0 || v["counts"].(map[string]any)["no"] != 3.0 || v["voters"] != 4.0 || v["open"] != true {
 		t.Fatalf("vote 3 %v", v)
 	}
 	f.sv.voteTick(advance(clk, time.Hour))
-	if len(results(f)) != 0 {
+	if len(results(f)) != 1 { // only #1, closed early
 		t.Fatal("result before the time is up")
 	}
 	f.sv.voteTick(advance(clk, 25*time.Hour))
 	rs := results(f)
-	want := []string{"[vote #1 result] passed yes 3 / no 1 (4 voters)", "[vote #2 result] failed yes 2 / no 0 (2 voters)", "[vote #3 result] failed yes 1 / no 3 (4 voters)"}
+	want := []string{"[vote #1 result] passed yes 3 / no 1 (4 voters) · closed early: pass rule met", "[vote #2 result] failed yes 2 / no 0 (2 voters)", "[vote #3 result] failed yes 1 / no 3 (4 voters)"}
 	if len(rs) != 3 {
 		t.Fatalf("results %v", rs)
 	}
@@ -136,14 +137,14 @@ func TestVoteYesNoPassAndFail(t *testing.T) {
 func TestVoteMinYesFlag(t *testing.T) {
 	f := setup(t)
 	clk := fakeClock(f.sv, time.Now())
-	id1, _ := openVote(t, f, "alice", voteNewReq{Channel: "team", Question: "min 3 (opened before the change)"})
+	id1, _ := openVoteOld(t, f, "alice", voteNewReq{Channel: "team", Question: "min 3 (opened before the change)"})
 	f.sv.voteMinYes = 1
-	id2, _ := openVote(t, f, "alice", voteNewReq{Channel: "team", Question: "min 1"})
+	id2, _ := openVoteOld(t, f, "alice", voteNewReq{Channel: "team", Question: "min 1"})
 	mustCast(t, f, id1, "yes", "dave")
-	mustCast(t, f, id2, "yes", "dave")
+	mustCast(t, f, id2, "yes", "dave") // min 1: closes early at once
 	f.sv.voteTick(advance(clk, 24*time.Hour))
 	rs := results(f)
-	if len(rs) != 2 || !strings.Contains(rs[0].Text, "failed yes 1 / no 0") || !strings.Contains(rs[1].Text, "#2 result] passed yes 1 / no 0") {
+	if len(rs) != 2 || !strings.Contains(rs[1].Text, "failed yes 1 / no 0") || !strings.Contains(rs[0].Text, "#2 result] passed yes 1 / no 0") {
 		t.Fatalf("results %v", rs)
 	}
 	// the server flag is checked
@@ -331,7 +332,7 @@ func TestVoteResultOnceAndSurvivesRestart(t *testing.T) {
 	now := advance(clk, 2*time.Hour)
 	f.sv.voteTick(now)
 	f.sv.voteTick(now)
-	if rs := results(f); len(rs) != 1 || rs[0].Text != "[vote #1 result] passed yes 3 / no 0 (3 voters)" {
+	if rs := results(f); len(rs) != 1 || rs[0].Text != "[vote #1 result] passed yes 3 / no 0 (3 voters) · closed early: pass rule met" {
 		t.Fatalf("results %v", rs)
 	}
 	st, err := os.Stat(filepath.Join(stateDir(), votesFile))
