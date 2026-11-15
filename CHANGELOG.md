@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Windows: the server TLS key checks (`serve`, `tls renew-server`) no longer refuse every key file (Windows has no Unix modes; the user profile ACL guards the files). Replacing a state or tick file retries briefly while another process has it open. `~\dir` paths expand to the home dir. The server self-update notices a binary replaced by rename on Windows too.
+- CI: the tests run on Windows too; actions/checkout v5 and actions/setup-go v6 (Node 24), Go module cache off (no go.sum).
+
 ## v0.1.0 - 2026-11-15
 
 First public release.

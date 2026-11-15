@@ -60,7 +60,7 @@ func TestViewOnceIssueStoresOnlyHash(t *testing.T) {
 		t.Fatalf("code shape %q", code)
 	}
 	st, err := os.Stat(viewOncePath())
-	if err != nil || st.Mode().Perm() != 0o600 {
+	if err != nil || wrongMode(st, 0o600) {
 		t.Fatalf("code file: %v %v, want mode 0600", err, st)
 	}
 	b, _ := os.ReadFile(viewOncePath())

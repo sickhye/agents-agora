@@ -237,7 +237,7 @@ func tlsRenewServer(dir, hosts string, now time.Time) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("CA key: %w (run: a2 tls init)", err)
 	}
-	if st.Mode().Perm()&0o077 != 0 {
+	if openToOthers(st) {
 		return "", fmt.Errorf("CA key %s must be mode 0600", caKeyPath)
 	}
 	caCert, err := readCertPEM(caPath)

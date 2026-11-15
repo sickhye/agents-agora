@@ -57,10 +57,10 @@ func TestViewSessionSurvivesRestart(t *testing.T) {
 		t.Fatal("session file lacks the session hash")
 	}
 	if runtime.GOOS != "windows" {
-		if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
+		if st, _ := os.Stat(p); wrongMode(st, 0o600) {
 			t.Fatalf("session file mode %v, want 0600", st.Mode().Perm())
 		}
-		if st, _ := os.Stat(filepath.Dir(p)); st.Mode().Perm() != 0o700 {
+		if st, _ := os.Stat(filepath.Dir(p)); wrongMode(st, 0o700) {
 			t.Fatalf("state dir mode %v, want 0700", st.Mode().Perm())
 		}
 	}
@@ -89,7 +89,7 @@ func TestViewSessionExpiredAfterReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st, err := os.Stat(filepath.Dir(p)); err != nil || st.Mode().Perm() != 0o700 {
+	if st, err := os.Stat(filepath.Dir(p)); err != nil || wrongMode(st, 0o700) {
 		t.Fatalf("state dir: %v %v", st, err)
 	}
 	vs2, err := newViewState(p, base.Add(viewSessionTTL-time.Minute))

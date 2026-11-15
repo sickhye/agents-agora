@@ -31,7 +31,7 @@ func setup(t *testing.T) *fixture {
 			t.Fatal(err)
 		}
 		st, _ := os.Stat(p)
-		if st.Mode().Perm() != 0o600 {
+		if wrongMode(st, 0o600) {
 			t.Fatalf("token file mode %v, want 0600", st.Mode().Perm())
 		}
 		tok, err := readToken(p)
@@ -318,7 +318,7 @@ func TestTokenNew(t *testing.T) {
 	if strings.Contains(string(b), tok) {
 		t.Error("tokens.json holds the plain token")
 	}
-	if st, _ := os.Stat(tokensPath()); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(tokensPath()); wrongMode(st, 0o600) {
 		t.Errorf("tokens.json mode %v", st.Mode().Perm())
 	}
 	out := captureStdout(t, func() {
@@ -333,9 +333,11 @@ func TestTokenNew(t *testing.T) {
 	if rc := run([]string{"token", "new", "nobody"}); rc != 2 {
 		t.Errorf("non-member token rc %d, want 2", rc)
 	}
-	os.Chmod(p, 0o644)
-	if _, err := readToken(p); err == nil {
-		t.Error("0644 token file accepted")
+	if unixModes {
+		os.Chmod(p, 0o644)
+		if _, err := readToken(p); err == nil {
+			t.Error("0644 token file accepted")
+		}
 	}
 }
 

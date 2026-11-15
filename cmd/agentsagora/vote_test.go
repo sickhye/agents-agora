@@ -335,7 +335,7 @@ func TestVoteResultOnceAndSurvivesRestart(t *testing.T) {
 		t.Fatalf("results %v", rs)
 	}
 	st, err := os.Stat(filepath.Join(stateDir(), votesFile))
-	if err != nil || st.Mode().Perm() != 0o600 {
+	if err != nil || wrongMode(st, 0o600) {
 		t.Fatalf("votes file %v %v", st, err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(stateDir(), votesFile))

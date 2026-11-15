@@ -58,7 +58,7 @@ func writeTick(path string, now time.Time) error {
 		err = os.Chmod(tmp, 0o644)
 	}
 	if err == nil {
-		err = os.Rename(tmp, path)
+		err = renameOver(tmp, path)
 	}
 	if err != nil {
 		os.Remove(tmp)

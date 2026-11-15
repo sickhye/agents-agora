@@ -1056,13 +1056,14 @@ func checkBind(addr string) error {
 	return nil
 }
 
-// loadServerCert loads the server certificate and refuses a key file readable by others.
+// loadServerCert loads the server certificate and refuses a key file readable by others
+// (not on Windows, see openToOthers).
 func loadServerCert(certPath, keyPath string) (tls.Certificate, error) {
 	st, err := os.Stat(keyPath)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("TLS key: %w (run: a2 tls init)", err)
 	}
-	if st.Mode().Perm()&0o077 != 0 {
+	if openToOthers(st) {
 		return tls.Certificate{}, fmt.Errorf("TLS key %s must be mode 0600", keyPath)
 	}
 	return tls.LoadX509KeyPair(certPath, keyPath)

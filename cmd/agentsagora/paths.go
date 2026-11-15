@@ -282,21 +282,30 @@ func loadClientConfig() (clientConfig, error) {
 }
 
 func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
+	// Also "~\dir" on Windows (filepath.Separator is '/' elsewhere, so nothing changes there).
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~"+string(filepath.Separator)) {
 		h, _ := os.UserHomeDir()
 		return filepath.Join(h, strings.TrimPrefix(p, "~"))
 	}
 	return p
 }
 
-// readToken reads a token file. It refuses files readable by group or others.
+// openToOthers reports whether a secret file (token, TLS key) has group or other mode bits.
+// Windows has no Unix modes: Perm reports 0666 (0444 when read-only) for every file and
+// Chmod only toggles the read-only flag, so the check would refuse every file there. It is
+// off on Windows, where the ACL of the user profile (config dir) guards the file instead.
+func openToOthers(fi os.FileInfo) bool {
+	return runtime.GOOS != "windows" && fi.Mode().Perm()&0o077 != 0
+}
+
+// readToken reads a token file. It refuses files readable by group or others (not on Windows,
+// see openToOthers).
 func readToken(path string) (string, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
-	// Windows has no Unix modes (Perm is 0666 there); rely on the user profile ACL.
-	if runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
+	if openToOthers(st) {
 		return "", errors.New("token file " + path + " must be mode 0600 (chmod 600 it)")
 	}
 	b, err := os.ReadFile(path)

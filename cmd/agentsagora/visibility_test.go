@@ -3,6 +3,7 @@ package main
 import (
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -104,6 +105,9 @@ func TestVersionFlag(t *testing.T) {
 		t.Skip("builds the binary")
 	}
 	bin := filepath.Join(t.TempDir(), "a2")
+	if runtime.GOOS == "windows" {
+		bin += ".exe" // Windows runs only files with an executable extension
+	}
 	if out, err := exec.Command("go", "build", "-ldflags", "-X main.version=v1.2.3", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}

@@ -159,7 +159,7 @@ func TestReceiptsSurviveRestartAndRename(t *testing.T) {
 	id := msgID(t, out)
 	fetchInbox(t, f, "bob")
 	p := filepath.Join(stateDir(), deliveriesFile)
-	if st, err := os.Stat(p); err != nil || st.Mode().Perm() != 0o600 {
+	if st, err := os.Stat(p); err != nil || wrongMode(st, 0o600) {
 		t.Fatalf("deliveries file %v %v", st, err)
 	}
 	b, _ := os.ReadFile(p)

@@ -151,7 +151,7 @@ func TestViewerIsNotAMember(t *testing.T) {
 	if p != filepath.Join(configDir(), "token-viewer") {
 		t.Fatalf("token new viewer printed %q", out2)
 	}
-	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(p); wrongMode(st, 0o600) {
 		t.Fatalf("token-viewer mode %v", st.Mode().Perm())
 	}
 }
@@ -416,7 +416,7 @@ func TestTLSRenewServer(t *testing.T) {
 	if !slices.Equal(srv.DNSNames, oldSrv.DNSNames) || len(srv.IPAddresses) != len(oldSrv.IPAddresses) {
 		t.Fatal("renew-server lost the host names")
 	}
-	if st, _ := os.Stat(filepath.Join(dir, "server-key.pem")); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(filepath.Join(dir, "server-key.pem")); wrongMode(st, 0o600) {
 		t.Fatal("server key mode")
 	}
 	ca, _ := readCertPEM(filepath.Join(dir, "ca.pem"))

@@ -126,7 +126,7 @@ func TestUndeliveredNoticeOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := filepath.Join(stateDir(), noticesFile)
-	if st, err := os.Stat(p); err != nil || st.Mode().Perm() != 0o600 {
+	if st, err := os.Stat(p); err != nil || wrongMode(st, 0o600) {
 		t.Fatalf("notices file %v %v", st, err)
 	}
 	_, o2 := send(t, f, "alice", "team", "dave", "dm") // #2: delivered below

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -174,7 +175,7 @@ func TestLiveRestartKeepsIncident(t *testing.T) {
 		t.Fatalf("no alert: %q", fs.got())
 	}
 	st, err := os.Stat(filepath.Join(stateDir(), livenessFile))
-	if err != nil || st.Mode().Perm() != 0o600 {
+	if err != nil || wrongMode(st, 0o600) {
 		t.Fatalf("state file: %v %v", st, err)
 	}
 	restartFixture(t, f)
@@ -233,33 +234,37 @@ func TestLiveWebhookFileChecks(t *testing.T) {
 	f, fs, log := liveFixture(t)
 	hook := filepath.Join(configDir(), webhookFile)
 	t0 := time.Now()
-	f.sv.live.touch("dave", t0)
-	if err := os.Chmod(hook, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	f.sv.liveTick(t0.Add(11 * time.Minute))
-	f.sv.live.touch("carol", t0)
-	f.sv.live.touch("carol", t0.Add(12*time.Minute))
-	f.sv.liveTick(t0.Add(23 * time.Minute))
-	if len(fs.got()) != 0 {
-		t.Fatalf("sent with a 0644 webhook file: %q", fs.got())
-	}
-	if n := strings.Count(log.String(), "liveness: webhook file not 0600, alerts off"); n != 1 {
-		t.Fatalf("mode log %d times: %s", n, log)
+	if unixModes { // a 0644 file is refused (no Unix modes on Windows)
+		f.sv.live.touch("dave", t0)
+		if err := os.Chmod(hook, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		f.sv.liveTick(t0.Add(11 * time.Minute))
+		f.sv.live.touch("carol", t0)
+		f.sv.live.touch("carol", t0.Add(12*time.Minute))
+		f.sv.liveTick(t0.Add(23 * time.Minute))
+		if len(fs.got()) != 0 {
+			t.Fatalf("sent with a 0644 webhook file: %q", fs.got())
+		}
+		if n := strings.Count(log.String(), "liveness: webhook file not 0600, alerts off"); n != 1 {
+			t.Fatalf("mode log %d times: %s", n, log)
+		}
 	}
 	// missing file: feature off, one line
 	os.Remove(hook)
 	if u, why := readWebhook(hook); u != "" || !strings.Contains(why, "no alert-webhook file") {
 		t.Fatalf("missing file: %q %q", u, why)
 	}
-	// symlink to a 0600 file: refused
+	// symlink to a 0600 file: refused. Windows creates symlinks only with Developer Mode
+	// or admin rights, so the check is skipped there when the link cannot be made.
 	real := filepath.Join(t.TempDir(), "real")
 	os.WriteFile(real, []byte(fs.url), 0o600)
-	if err := os.Symlink(real, hook); err != nil {
+	if err := os.Symlink(real, hook); err == nil {
+		if u, why := readWebhook(hook); u != "" || !strings.Contains(why, "not a regular file") {
+			t.Fatalf("symlink: %q %q", u, why)
+		}
+	} else if runtime.GOOS != "windows" {
 		t.Fatal(err)
-	}
-	if u, why := readWebhook(hook); u != "" || !strings.Contains(why, "not a regular file") {
-		t.Fatalf("symlink: %q %q", u, why)
 	}
 	os.Remove(hook)
 	// http (not https) URL: refused

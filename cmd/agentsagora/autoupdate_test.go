@@ -160,7 +160,7 @@ func TestUpdateShaMismatchKeepsBinary(t *testing.T) {
 func TestUpdateSameVersionNoop(t *testing.T) {
 	c, hits := updateServer(t, []byte("same build"), sha([]byte("same build")))
 	_, exe := exeIn(t, "same build")
-	st0, _ := os.Stat(exe)
+	st0, _ := statNow(exe) // file ID taken now (Windows reads it lazily)
 	m, err := c.fetchManifest()
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestUpdateReplacesAtomically(t *testing.T) {
 	newBin := []byte("brand new build")
 	c, _ := updateServer(t, newBin, sha(newBin))
 	dir, exe := exeIn(t, "old build")
-	st0, _ := os.Stat(exe)
+	st0, _ := statNow(exe) // file ID taken now (Windows reads it lazily)
 	m, _ := c.fetchManifest()
 	res, err := applyUpdate(c, exe, m)
 	if err != nil || !res.changed || res.to != shortBuild(sha(newBin)) {
@@ -196,7 +196,7 @@ func TestUpdateReplacesAtomically(t *testing.T) {
 	if os.SameFile(st0, st1) {
 		t.Error("replaced in place (want a new file renamed over the old one)")
 	}
-	if st1.Mode().Perm() != 0o751 {
+	if wrongMode(st1, 0o751) {
 		t.Errorf("mode %v, want the old mode 0751", st1.Mode().Perm())
 	}
 	if want, _ := time.Parse(time.RFC3339, "2026-11-12T12:00:00+09:00"); !st1.ModTime().Equal(want) {
@@ -257,7 +257,7 @@ func TestClaimCheckEverySixHours(t *testing.T) {
 	if !claimCheck(now.Add(6*time.Hour + time.Second)) {
 		t.Error("not due after 6 h")
 	}
-	if st, _ := os.Stat(updateStampPath()); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(updateStampPath()); wrongMode(st, 0o600) {
 		t.Errorf("stamp mode %v", st.Mode().Perm())
 	}
 }

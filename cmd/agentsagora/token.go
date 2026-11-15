@@ -54,7 +54,7 @@ func writeFile0600(path string, data []byte) error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	return renameOver(tmp, path)
 }
 
 func writeHashes(hashes map[string]string) error {

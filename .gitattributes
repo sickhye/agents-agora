@@ -1,0 +1,3 @@
+# Same bytes on every OS: Windows runners check out with core.autocrlf=true, which would
+# turn testdata and examples into CRLF.
+* text=auto eol=lf

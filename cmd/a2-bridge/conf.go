@@ -66,7 +66,8 @@ func stateDir() string {
 }
 
 func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
+	// Also "~\dir" on Windows (filepath.Separator is '/' elsewhere, so nothing changes there).
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~"+string(filepath.Separator)) {
 		return filepath.Join(homeDir(), strings.TrimPrefix(p, "~"))
 	}
 	return p
@@ -79,6 +80,8 @@ func readKV(path string, mustBePrivate bool) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Windows has no Unix modes (Perm reports 0666 for every file); the user profile ACL
+	// guards the config dir there, so the mode check is off.
 	if mustBePrivate && runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("%s must be mode 0600 (chmod 600 it)", path)
 	}
@@ -231,7 +234,7 @@ func readSecret(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 { // no Unix modes on Windows (see readKV)
 		return "", errors.New("token file " + path + " must be mode 0600 (chmod 600 it)")
 	}
 	b, err := os.ReadFile(path)

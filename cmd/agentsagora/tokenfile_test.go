@@ -142,6 +142,7 @@ func TestTokenFileFlagSurvivesReexec(t *testing.T) {
 }
 
 func TestTokenFileFlagErrorNamesOnlyPath(t *testing.T) {
+	skipWithoutUnixModes(t) // the error under test is the mode refusal
 	withClientConf(t, "/conf/token")
 	p := filepath.Join(t.TempDir(), "member.token")
 	secret := "s3cr3t-token-value"

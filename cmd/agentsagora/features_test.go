@@ -480,7 +480,7 @@ func TestAuditLog(t *testing.T) {
 			t.Errorf("audit log misses %s:\n%s", want, s)
 		}
 	}
-	if st, _ := os.Stat(filepath.Join(stateDir(), "audit.jsonl")); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(filepath.Join(stateDir(), "audit.jsonl")); wrongMode(st, 0o600) {
 		t.Errorf("audit mode %v", st.Mode().Perm())
 	}
 }
@@ -522,7 +522,7 @@ func TestTLS(t *testing.T) {
 	}
 	for f, want := range map[string]os.FileMode{"ca-key.pem": 0o600, "server-key.pem": 0o600, "ca.pem": 0o644, "server.pem": 0o644} {
 		st, err := os.Stat(filepath.Join(tdir, f))
-		if err != nil || st.Mode().Perm() != want {
+		if err != nil || wrongMode(st, want) {
 			t.Errorf("%s mode %v err %v", f, st.Mode().Perm(), err)
 		}
 	}
@@ -569,10 +569,12 @@ func TestTLS(t *testing.T) {
 	if _, err := c12.Get(srv.URL + "/healthz"); err == nil {
 		t.Error("TLS 1.2 accepted")
 	}
-	// a 0644 key is refused
-	os.Chmod(filepath.Join(tdir, "server-key.pem"), 0o644)
-	if _, err := loadServerCert(filepath.Join(tdir, "server.pem"), filepath.Join(tdir, "server-key.pem")); err == nil {
-		t.Error("0644 key accepted")
+	// a 0644 key is refused (no Unix modes on Windows)
+	if unixModes {
+		os.Chmod(filepath.Join(tdir, "server-key.pem"), 0o644)
+		if _, err := loadServerCert(filepath.Join(tdir, "server.pem"), filepath.Join(tdir, "server-key.pem")); err == nil {
+			t.Error("0644 key accepted")
+		}
 	}
 	// the name-constrained CA cannot vouch for another host
 	if _, _, err := splitHosts("a b"); err == nil {

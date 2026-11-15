@@ -36,7 +36,7 @@ func TestWatchTickWrittenAtStartAndOnTick(t *testing.T) {
 		t.Fatalf("stamp %q", b)
 	}
 	st, _ := os.Stat(p)
-	if st.Mode().Perm() != 0o644 {
+	if wrongMode(st, 0o644) {
 		t.Errorf("mode %v", st.Mode())
 	}
 	first := string(b)
@@ -103,10 +103,10 @@ func TestWatchStatusCommandExit(t *testing.T) {
 
 func TestTickDefaultPath(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "/x/state")
-	if got := tickDefaultPath(""); got != "/x/state/agentsagora/watch-tick-all" {
+	if got := tickDefaultPath(""); got != filepath.Join("/x/state", "agentsagora", "watch-tick-all") {
 		t.Fatal(got)
 	}
-	if got := tickDefaultPath("team"); got != "/x/state/agentsagora/watch-tick-team" {
+	if got := tickDefaultPath("team"); got != filepath.Join("/x/state", "agentsagora", "watch-tick-team") {
 		t.Fatal(got)
 	}
 }

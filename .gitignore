@@ -13,3 +13,8 @@ token-*
 tokens.json
 .env
 alert-webhook
+
+# go build output inside the command dirs
+/cmd/agentsagora/agentsagora
+/cmd/a2-bridge/a2-bridge
+/cmd/tcp-relay/tcp-relay

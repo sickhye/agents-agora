@@ -55,10 +55,21 @@ type selfUpdater struct {
 func newSelfUpdater(path, runningSHA string, now func() time.Time) *selfUpdater {
 	u := &selfUpdater{path: path, runningSHA: runningSHA, debounce: selfUpdateDebounce, now: now, check: versionCheck,
 		logf: func(f string, a ...any) { fmt.Fprintf(os.Stderr, "a2: self-update: "+f+"\n", a...) }}
-	if st, err := os.Stat(path); err == nil {
+	if st, err := statNow(path); err == nil {
 		u.last, u.checked = st, st
 	}
 	return u
+}
+
+// statNow is os.Stat with the file identity read at once. On Windows os.Stat reads the file
+// ID lazily, by path, at the first os.SameFile, so a FileInfo kept across a rename-over would
+// describe the new file and sameState would miss the change. Elsewhere the extra call is a no-op.
+func statNow(path string) (os.FileInfo, error) {
+	st, err := os.Stat(path)
+	if err == nil {
+		os.SameFile(st, st) // loads the Windows file ID now
+	}
+	return st, err
 }
 
 func sameState(a, b os.FileInfo) bool {
@@ -68,7 +79,7 @@ func sameState(a, b os.FileInfo) bool {
 // step is one poll. It returns the new file's sha256 and version line when the server
 // should restart into it.
 func (u *selfUpdater) step() (sha, version string, ready bool) {
-	st, err := os.Stat(u.path)
+	st, err := statNow(u.path)
 	if err != nil || !st.Mode().IsRegular() {
 		return "", "", false // mid-rename or deleted: wait
 	}

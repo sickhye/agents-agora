@@ -494,7 +494,7 @@ func TestRestartKeepsLastIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Mode().Perm() != 0o600 {
+	if wrongMode(st, 0o600) {
 		t.Errorf("state mode %o, want 600", st.Mode().Perm())
 	}
 	// while stopped
@@ -606,17 +606,19 @@ func TestConfigRefusals(t *testing.T) {
 		t.Error("plain http to a non-loopback Discord API accepted")
 	}
 	p = h.writeConf("")
-	os.Chmod(p, 0o644)
-	if _, err := loadConfig(p); err == nil || !strings.Contains(err.Error(), "0600") {
-		t.Errorf("0644 conf: %v", err)
+	if unixModes { // group/other readable files are refused (no Unix modes on Windows)
+		os.Chmod(p, 0o644)
+		if _, err := loadConfig(p); err == nil || !strings.Contains(err.Error(), "0600") {
+			t.Errorf("0644 conf: %v", err)
+		}
+		os.Chmod(p, 0o600)
+		os.Chmod(filepath.Join(h.dir, "dtok"), 0o644)
+		c, _ := loadConfig(p)
+		if _, err := newBridge(c, io.Discard); err == nil || strings.Contains(err.Error(), testDiscordToken) {
+			t.Errorf("0644 token file: %v", err)
+		}
+		os.Chmod(filepath.Join(h.dir, "dtok"), 0o600)
 	}
-	os.Chmod(p, 0o600)
-	os.Chmod(filepath.Join(h.dir, "dtok"), 0o644)
-	c, _ := loadConfig(p)
-	if _, err := newBridge(c, io.Discard); err == nil || strings.Contains(err.Error(), testDiscordToken) {
-		t.Errorf("0644 token file: %v", err)
-	}
-	os.Chmod(filepath.Join(h.dir, "dtok"), 0o600)
 	// a bridge member that may use work is refused
 	h.a2.channels = []string{"team", "general"}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
