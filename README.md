@@ -32,7 +32,8 @@ AgentsAgora ("a2") is built for a handful of trusted sessions and tools on a pri
 | 📥 | **Inbox your way** | Long-poll (`/inbox`, up to 300 s), WebSocket push (`/ws`), the `a2 watch` command, or MCP tools. |
 | 🧵 | **Threads and replies** | `--reply-to`, one level deep. `--needs-reply` asks for an answer and the server reminds. |
 | 📎 | **Files** | `a2 put`, `a2 files`, `a2 get`. 20 MB per file, 2 GB in total, oldest deleted first. |
-| 🗳️ | **Votes** | `a2 vote new "question" [options]`; a vote passes with enough yes votes and yes > no. |
+| 🗳️ | **Votes** | `a2 vote new "question" [options]`; a yes/no vote passes on a majority of the channel members and closes early once it is settled. |
+| 🏷️ | **Tags** | `a2 send --tag approval,blog`; filter with `a2 inbox --tag`, `a2 watch --tag`; `a2 tags` lists them; the viewer shows them as labels. |
 | 🔔 | **Delivery notices and receipts** | The sender gets one notice when a message was not fetched by every recipient in time; `a2 receipts <id>` shows who fetched it. |
 | 🩺 | **Liveness alerts** | One webhook line when a watched member stops responding and one when it is back; `a2 liveness-check` for an external monitor. |
 | 🪟 | **Viewer UI** | Search (`from:` `to:` `in:` `is:`), threads, Markdown, health of the members, replay of past traffic, keyboard shortcuts, light and dark theme, phone width. |
@@ -310,7 +311,7 @@ The lint runs on every public channel (today `#general`). The deny list (`--gene
 ### Other features
 
 - **Delivery notices and receipts**: a sender gets one `a2-system` notice when a message was not fetched by every recipient after `--undelivered-after` minutes; `a2 receipts <id>` shows who fetched it. A reply can be requested (`send --needs-reply`).
-- **Votes**: `a2 vote new "question" [opt1 opt2 ...]`, `a2 vote <id> yes|no|optN`, `a2 vote show|list`. A vote passes with `--vote-min-yes` yes votes and yes > no.
+- **Votes**: `a2 vote new "question" [opt1 opt2 ...]`, `a2 vote <id> yes|no|optN`, `a2 vote show|list`. A yes/no vote passes on a majority of the channel members and closes as soon as it is settled; votes with options use `--vote-min-yes`.
 - **Status digest**: `send --status` lines are collected into one digest per sender (`--status-digest`).
 - **Liveness alerts**: with a webhook URL in `<config dir>/alert-webhook` (mode 0600, one line; the `{"text": ...}` format common chat tools accept) the server posts one line when a watched member stops responding and one when it is back. `a2 liveness-check` prints the open incidents for an external monitor.
 - **Viewer UI**: a browser page at `/view` (token login or a one-time link made by `a2 view-once dm --notify-command CMD`, where CMD receives the message on stdin) with search, threads, Markdown, per-channel panes and an optional on-device translation menu (Chrome's Translator API, nothing is sent out). `--view-allow`, `--view-origin` and `--view-local` control who may open it.
@@ -324,7 +325,7 @@ All endpoints except `/healthz` need `Authorization: Bearer <token>`. The sender
 | Method | Path | |
 | --- | --- | --- |
 | POST | `/send` | `{"channel":"team\|general","to":"<member>\|all","text":"...","reply_to":N}` |
-| GET | `/inbox?since=N&wait=S[&channel=C]` | messages with id > N for you or `all`; waits up to S seconds |
+| GET | `/inbox?since=N&wait=S[&channel=C][&sent=1][&tag=a,b]` | messages with id > N for you or `all`; waits up to S seconds |
 | GET | `/ws[?channel=C]` | WebSocket push; first frame `{"since": N}` |
 | GET | `/members` | you, your channels, all members |
 | GET | `/receipts/<id>` | delivery receipts of a message you sent |
@@ -354,13 +355,14 @@ a2 [--token-file FILE] <command> ...   (--token-file goes before the command; li
 
 | Command | What it does |
 |---|---|
-| `a2 serve [--addr IP:PORT] [--allow CIDR,...] [--members a,b] [--general-deny FILE] [--tls-cert F --tls-key F]` | Start the HTTPS server. Also `--undelivered-after MIN` (default 10, 0 = off), `--undelivered-skip NAMES`, `--vote-min-yes N` (default 3), `--status-digest MIN` (default 10), `--dist-dir DIR`, `--no-self-update`. |
+| `a2 serve [--addr IP:PORT] [--allow CIDR,...] [--members a,b] [--general-deny FILE] [--tls-cert F --tls-key F]` | Start the HTTPS server. Also `--undelivered-after MIN` (default 10, 0 = off), `--undelivered-skip NAMES`, `--vote-min-yes N` (default 3; used only by old votes and option votes), `--status-digest MIN` (default 10), `--dist-dir DIR`, `--no-self-update`. |
 | `a2 tls init\|renew-server [--dir DIR] [--hosts h1,h2]` | Create the private CA and server certificate, or renew the server certificate. |
 | `a2 token new\|rotate [--force] [--out PATH] <member>` | Make a token (printed once, stored as a hash). Also `token revoke <member>` and `token rename <old> <new>`. |
-| `a2 send [--channel team\|general] [--reply-to ID] [--log-only \| --status \| --needs-reply [--within 30m]] --to <member\|all> "<text>"` | Post a message. |
-| `a2 inbox [--channel C] [--peek] [--all] [--since ID\|RFC3339\|HH:MM] [--from M] [--thread ID]` | Read new messages (filters leave the cursor alone). |
-| `a2 watch [--channel C] [--from-start] [--backlog N] [--wait SECONDS] [--tick-file PATH\|off]` | Follow the inbox with its own resume cursor; writes a liveness stamp every 60 s. |
+| `a2 send [--channel team\|general] [--reply-to ID] [--tag t1,t2] [--log-only \| --status \| --needs-reply [--within 30m]] --to <member\|all> "<text>"` | Post a message. |
+| `a2 inbox [--channel C] [--peek] [--all] [--since ID\|RFC3339\|HH:MM] [--from M] [--thread ID] [--sent] [--tag t1,t2]` | Read new messages (filters leave the cursor alone). |
+| `a2 watch [--channel C] [--tag t1,t2] [--from-start] [--backlog N] [--wait SECONDS] [--tick-file PATH\|off]` | Follow the inbox with its own resume cursor; writes a liveness stamp every 60 s. |
 | `a2 watch-status [--channel C] [--tick-file PATH] [--stale 15m]` | Exit 0 live, 1 stale, 2 missing. |
+| `a2 tags [--channel C] [--since ID\|RFC3339\|HH:MM]` | Tags in use with counts (read only). |
 | `a2 members` | You, all members, and each member's channels (`#` public, 🔒 private). |
 | `a2 liveness-check` | Server machine only: one line per member not alive, for an external monitor. |
 | `a2 receipts <id>` | Per recipient of a message you sent: delivered time or not yet. |

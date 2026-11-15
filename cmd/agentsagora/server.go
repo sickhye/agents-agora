@@ -73,6 +73,8 @@ type Message struct {
 	// Queued is only set in a send response: the status line waits for the digest, which
 	// goes out at about this time (RFC3339); the message has no id yet. Never stored.
 	Queued string `json:"queued,omitempty"`
+	// Tags: up to 5 labels set at send time; omitted when empty.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // store keeps all messages in memory and appends each new one to the JSONL file.
@@ -112,6 +114,7 @@ func openStore(path string) (*store, error) {
 		if m.Channel == "" {
 			m.Channel = chTeam
 		}
+		m.Tags = cleanTags(m.Tags)
 		s.msgs = append(s.msgs, m)
 	}
 	return s, sc.Err()
@@ -197,6 +200,23 @@ func (s *store) inbox(member string, since int64, channels []string, nt nameTabl
 			continue
 		}
 		if m.To == member || m.To == allTarget {
+			out = append(out, m)
+		}
+	}
+	return out, s.notify
+}
+
+// sent lists the messages the member itself sent in the channels, after since.
+// The sender is always the caller's own token identity, never a parameter.
+func (s *store) sent(member string, since int64, channels []string, nt nameTable) ([]Message, <-chan struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Message{}
+	for _, m := range s.msgs {
+		if m.ID <= since || !slices.Contains(channels, m.Channel) {
+			continue
+		}
+		if m = nt.showMsg(m); m.From == member {
 			out = append(out, m)
 		}
 	}
@@ -342,6 +362,7 @@ func (sv *server) handler() http.Handler {
 	})
 	mux.HandleFunc("POST /send", sv.auth(sv.handleSend))
 	mux.HandleFunc("GET /inbox", sv.auth(sv.handleInbox))
+	mux.HandleFunc("GET /tags", sv.auth(sv.handleTags))
 	mux.HandleFunc("GET /members", sv.auth(sv.handleMembers))
 	mux.HandleFunc("GET /receipts/{id}", sv.auth(sv.handleReceipts))
 	mux.HandleFunc("POST /files", sv.auth(sv.handlePutFile))
@@ -616,6 +637,10 @@ func (sv *server) sendOnOpts(member, ch, to, text string, replyTo int64, o sendO
 	if err := o.check(); err != nil {
 		return Message{}, err
 	}
+	tags, err := normalizeTags(o.tags)
+	if err != nil {
+		return Message{}, err
+	}
 	if len(text) > maxTextBytes {
 		return Message{}, errCode(http.StatusRequestEntityTooLarge, "text over %d bytes", maxTextBytes)
 	}
@@ -643,7 +668,7 @@ func (sv *server) sendOnOpts(member, ch, to, text string, replyTo int64, o sendO
 	if !sv.limit.allow(member, now) {
 		return Message{}, errCode(http.StatusTooManyRequests, "rate limit")
 	}
-	nm := Message{Channel: ch, From: member, To: to, Text: text, ReplyTo: root, Kind: o.kind}
+	nm := Message{Channel: ch, From: member, To: to, Text: text, ReplyTo: root, Kind: o.kind, Tags: tags}
 	if o.kind == kindStatus {
 		if due, queued := sv.digestStatus(nm, now); queued {
 			nm.Queued, nm.Notice = due.In(jst).Format(time.RFC3339), notice
@@ -763,10 +788,11 @@ func (sv *server) memberList() []memberInfo {
 // --- HTTP handlers ---
 
 type sendReq struct {
-	Channel string `json:"channel,omitempty"`
-	To      string `json:"to"`
-	Text    string `json:"text"`
-	ReplyTo int64  `json:"reply_to,omitempty"` // optional thread root (or any message in it)
+	Channel string   `json:"channel,omitempty"`
+	To      string   `json:"to"`
+	Text    string   `json:"text"`
+	ReplyTo int64    `json:"reply_to,omitempty"` // optional thread root (or any message in it)
+	Tags    []string `json:"tags,omitempty"`     // optional labels
 	// send-option (optional; older servers ignore them): kind "log" or "status", and the
 	// needs-reply time in seconds (one reminder to both sides if no reply comes in time).
 	Kind          string `json:"kind,omitempty"`
@@ -794,7 +820,7 @@ func (sv *server) handleSend(w http.ResponseWriter, r *http.Request) {
 	if req.NeedsReplySec >= 0 && req.NeedsReplySec <= int64(maxNeedsReply/time.Second) {
 		within = time.Duration(req.NeedsReplySec) * time.Second
 	}
-	m, err := sv.sendWith(from, req.Channel, req.To, req.Text, req.ReplyTo, sendOpts{kind: req.Kind, within: within})
+	m, err := sv.sendWith(from, req.Channel, req.To, req.Text, req.ReplyTo, sendOpts{kind: req.Kind, within: within, tags: req.Tags})
 	sv.audit.write(auditEntry{Member: from, Remote: remoteIP(r), Action: "send", Channel: m.Channel + orReq(m.Channel, req.Channel), Size: int64(len(req.Text)), Status: statusOf(err), Target: req.To})
 	if err != nil {
 		writeErr(w, err)
@@ -837,6 +863,13 @@ func (sv *server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		// send-check filters (sendcheck.go): they only narrow this member's inbox
 		filt, err = sv.parseFilter(q.Get("since_time"), q.Get("from"), q.Get("thread"), currentNames())
+		filt.sent = q.Get("sent") == "1" || q.Get("sent") == "true"
+		if err == nil {
+			filt.tags, err = parseTagFilter(splitTags(q.Get("tag")))
+		}
+		if err == nil && filt.sent && filt.from != "" && filt.from != member {
+			err = errCode(http.StatusBadRequest, "sent: lists only your own messages")
+		}
 	}
 	if err != nil {
 		sv.audit.write(auditEntry{Member: member, Remote: remoteIP(r), Action: "inbox", Channel: q.Get("channel"), Status: statusOf(err)})
@@ -870,7 +903,7 @@ func (sv *server) handleInbox(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// record the delivery only when the response body went out without a write error
-	if writeJSONErr(w, http.StatusOK, body(msgs)) == nil {
+	if writeJSONErr(w, http.StatusOK, body(msgs)) == nil && !filt.sent {
 		sv.delivered(member, msgs)
 	}
 	sv.live.touch(member, sv.now()) // a long poll ends here: still a contact
@@ -1088,7 +1121,7 @@ func cmdServe(args []string) error {
 	noSelfUpdate := fs.Bool("no-self-update", false, "do not restart when the binary on disk changes")
 	undelivMins := fs.Int("undelivered-after", defaultUndeliveredMins, "minutes after which the sender of a message not yet delivered to every recipient gets one a2-system notice (0 = off)")
 	undelivSkipS := fs.String("undelivered-skip", "", "member names (comma separated) left out of undelivered notices: a message only to them gets none; with other recipients they are not counted or named")
-	voteMinYes := fs.Int("vote-min-yes", defaultVoteMinYes, "yes votes a vote needs to pass (and yes > no; options: votes of the top option)")
+	voteMinYes := fs.Int("vote-min-yes", defaultVoteMinYes, "kept for compatibility; used only by old votes (yes >= N and yes > no) and by option votes (votes of the top option)")
 	digestMins := fs.Int("status-digest", defaultDigestMins, "minutes a status line (send --status) waits to go out with the other status lines of its sender as one digest message (0 = off: at once)")
 	if err := fs.Parse(args); err != nil {
 		return usageError(err.Error())

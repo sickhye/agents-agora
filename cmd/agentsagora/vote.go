@@ -3,15 +3,21 @@ package main
 // Votes: members decide things (for example which a2 improvements to build) by
 // voting.
 //
-// Rule: a vote is open 24 h by default (--hours 1..168). A yes/no vote passes when
-// yes >= min-yes and yes > no (min-yes: server flag --vote-min-yes, default 3; the value
-// is fixed in the vote when it opens). A vote with options: the winner is the option with
-// the most votes; it passes only when it has >= min-yes votes and no other option has as
-// many (a tie does not pass).
+// Rule: a vote is open 24 h by default (--hours 1..168). A yes/no vote passes
+// when yes >= need, a strict majority of N = the members of its channel when it opened
+// (need = N/2+1; N=4 -> 3, a 2:2 tie does not pass). It closes early as soon as it is
+// settled: pass when yes >= need, fail when yes cannot reach need (N - no < need). At the
+// deadline it passes if yes >= need, else fails. Old votes recorded with min-yes and no N
+// keep yes >= min-yes and yes > no (--vote-min-yes, used only for them and for options).
+// A vote with options: the winner is the option with the most votes; it passes only when
+// it has >= min-yes votes and no other option has as many (a tie does not pass).
 //
 // A vote is announced as a normal message from the proposer, to all on its channel
 // ("[vote #N] ..."), so watch and inbox see it with the usual line format. One vote per
 // member; voting again replaces the old vote; the proposer may vote; a closed vote refuses.
+// Early close: after a cast, on the tick and at open, a settled yes/no
+// vote closes at once (same result message plus " · closed early: pass rule met" or "cannot pass").
+// Votes with options close only at the deadline. A closed vote is never closed again.
 // When the time is up, the server posts ONE result message from a2-system to all on the
 // channel, as a reply in the vote message's thread:
 // "[vote #N result] passed|failed yes N / no M (K voters)".
@@ -64,6 +70,7 @@ type voteRec struct {
 	Question string    `json:"question"`
 	Options  []string  `json:"options,omitempty"` // empty = yes/no
 	MinYes   int       `json:"min_yes"`
+	N        int       `json:"n,omitempty"` // yes/no majority rule: channel members when it opened; 0 = old MinYes rule
 	Opened   time.Time `json:"opened"`
 	Closes   time.Time `json:"closes"`
 
@@ -201,6 +208,8 @@ type voteView struct {
 	Options  []string       `json:"options,omitempty"` // empty = yes/no; choice optN is Options[N-1]
 	Choices  []string       `json:"choices"`           // yes, no / opt1 ... in display order
 	MinYes   int            `json:"min_yes"`
+	Members  int            `json:"members,omitempty"` // N of the majority rule (0 = old rule)
+	Need     int            `json:"need,omitempty"`
 	Opened   string         `json:"opened"`
 	Closes   string         `json:"closes"`
 	Open     bool           `json:"open"`
@@ -246,6 +255,9 @@ func (v *voteRec) tally() (counts map[string]int, passed bool, winner string) {
 		}
 	}
 	if len(v.Options) == 0 {
+		if v.N > 0 {
+			return counts, counts[voteYes] >= v.need(), ""
+		}
 		return counts, counts[voteYes] >= v.MinYes && counts[voteYes] > counts[voteNo], ""
 	}
 	top, n := "", -1
@@ -266,7 +278,10 @@ func (v *voteRec) tally() (counts map[string]int, passed bool, winner string) {
 
 func (v *voteRec) rule() string {
 	if len(v.Options) == 0 {
-		return fmt.Sprintf("passes when yes >= %d and yes > no", v.MinYes)
+		if v.N > 0 {
+			return fmt.Sprintf("passes when yes >= %d of %d members (majority)", v.need(), v.N)
+		}
+		return fmt.Sprintf("passes when yes >= %d and yes > no (old rule)", v.MinYes)
 	}
 	return fmt.Sprintf("the option with the most votes passes when it has >= %d votes (a tie does not pass)", v.MinYes)
 }
@@ -274,9 +289,12 @@ func (v *voteRec) rule() string {
 func (v *voteRec) view(nt nameTable, now time.Time) voteView {
 	counts, passed, winner := v.tally()
 	vv := voteView{ID: v.ID, Channel: v.Channel, From: nt.current(v.From), Question: v.Question, Options: v.Options,
-		Choices: v.choices(), MinYes: v.MinYes, Opened: v.Opened.In(jst).Format(time.RFC3339), Closes: v.Closes.In(jst).Format(time.RFC3339),
+		Choices: v.choices(), MinYes: v.MinYes, Members: v.N, Opened: v.Opened.In(jst).Format(time.RFC3339), Closes: v.Closes.In(jst).Format(time.RFC3339),
 		Open: v.isOpen(now), MsgID: v.msgID, Counts: counts, Ballots: []ballot{}, Voters: len(v.ballots),
 		Passed: passed, Winner: winner, Result: voteFailed, Posted: v.closed, Rule: v.rule()}
+	if v.N > 0 && len(v.Options) == 0 {
+		vv.Need = v.need()
+	}
 	if passed {
 		vv.Result = votePassed
 	}
@@ -323,7 +341,11 @@ func (v *voteRec) announceText() string {
 	if len(v.Options) == 0 {
 		b.WriteString("Choices: yes / no\n")
 		fmt.Fprintf(&b, "Vote: a2 vote %d yes or a2 vote %d no (MCP: vote_cast) · status: a2 vote show %d\n", v.ID, v.ID, v.ID)
-		fmt.Fprintf(&b, "Closes: %s JST · pass rule: at least %d yes votes and yes > no", v.Closes.In(jst).Format("01-02 15:04"), v.MinYes)
+		if v.N > 0 {
+			fmt.Fprintf(&b, "Closes: %s JST · pass rule: at least %d of the %d channel members vote yes (majority)", v.Closes.In(jst).Format("01-02 15:04"), v.need(), v.N)
+		} else {
+			fmt.Fprintf(&b, "Closes: %s JST · pass rule: at least %d yes votes and yes > no", v.Closes.In(jst).Format("01-02 15:04"), v.MinYes)
+		}
 		return b.String()
 	}
 	parts := make([]string, len(v.Options))
@@ -429,7 +451,7 @@ func (sv *server) voteNew(member, channel, question string, options []string, ho
 	l := sv.votes
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	v := &voteRec{ID: l.last + 1, Channel: ch, From: base, Question: question, Options: opts, MinYes: sv.voteMinYes,
+	v := &voteRec{ID: l.last + 1, Channel: ch, From: base, Question: question, Options: opts, MinYes: sv.voteMinYes, N: sv.voteN(ch, opts),
 		Opened: now.In(jst), Closes: now.Add(time.Duration(hours) * time.Hour).In(jst)}
 	if err := l.writeApply(voteLine{Kind: "open", Open: v}); err != nil {
 		return voteView{}, Message{}, fmt.Errorf("votes: %w", err)
@@ -446,6 +468,9 @@ func (sv *server) voteNew(member, channel, question string, options []string, ho
 	if err := l.writeApply(voteLine{Kind: "msg", Vote: v.ID, MsgID: m.ID}); err != nil {
 		fmt.Fprintln(os.Stderr, "a2: votes:", err)
 		v.msgID = m.ID
+	}
+	if note := v.earlyNote(); note != "" { // settled at open (for example a one-member channel)
+		sv.closeVoteLocked(v, now, note)
 	}
 	return v.view(nt, now), m, nil
 }
@@ -479,6 +504,9 @@ func (sv *server) voteCast(member string, id int64, choice string) (voteView, st
 	prev := v.ballots[base]
 	if err := l.writeApply(voteLine{Kind: "cast", Vote: id, Member: base, Choice: c, At: now.In(jst)}); err != nil {
 		return voteView{}, "", fmt.Errorf("votes: %w", err)
+	}
+	if note := v.earlyNote(); note != "" {
+		sv.closeVoteLocked(v, now, note)
 	}
 	return v.view(nt, now), prev, nil
 }
@@ -540,23 +568,79 @@ func (sv *server) voteTick(now time.Time) {
 	defer l.mu.Unlock()
 	for _, id := range l.order {
 		v := l.votes[id]
-		if v.dropped || v.closed || now.Before(v.Closes) {
+		if v.dropped || v.closed {
 			continue
 		}
-		text := v.resultText()
-		res := voteFailed
-		if strings.HasPrefix(text, fmt.Sprintf("[vote #%d result] %s", v.ID, votePassed)) {
-			res = votePassed
+		// a yes/no vote that already meets the pass rule (e.g. opened before early close
+		// existed) closes early on the next tick
+		note := ""
+		if now.Before(v.Closes) {
+			if note = v.earlyNote(); note == "" {
+				continue
+			}
 		}
-		// mark first: a crash between the two loses the result message but never repeats it
-		if err := l.writeApply(voteLine{Kind: "closed", Vote: id, Result: res, At: now.In(jst)}); err != nil {
-			fmt.Fprintln(os.Stderr, "a2: votes:", err)
+		if !sv.closeVoteLocked(v, now, note) {
 			return // try again next tick
 		}
-		if _, err := sv.store.appendReply(v.Channel, systemSender, allTarget, text, "", v.msgID, now); err != nil {
-			fmt.Fprintln(os.Stderr, "a2: vote result:", err)
+	}
+}
+
+// need is the yes votes a majority-rule vote needs: a strict majority of N (N=4 -> 3).
+func (v *voteRec) need() int { return v.N/2 + 1 }
+
+// voteN is N for a new vote: the members who can read ch now (the same membership that
+// receives a channel message). 0 for votes with options, which keep the deadline rule.
+func (sv *server) voteN(ch string, opts []string) int {
+	if len(opts) != 0 {
+		return 0
+	}
+	nt, n := currentNames(), 0
+	for _, b := range sv.members {
+		if slices.Contains(nt.channels(nt.current(b)), ch) {
+			n++
 		}
 	}
+	return n
+}
+
+// earlyNote says why a yes/no vote can close before the deadline, or "" if it cannot.
+// Pass: the pass rule is met. Fail (majority rule only): yes can no longer reach need,
+// i.e. N - no < need. Votes with options keep the deadline: the top option can still be
+// overtaken, so there is no safe early point.
+func (v *voteRec) earlyNote() string {
+	if len(v.Options) != 0 {
+		return ""
+	}
+	counts, passed, _ := v.tally()
+	if passed {
+		return "pass rule met"
+	}
+	if v.N > 0 && v.N-counts[voteNo] < v.need() {
+		return "cannot pass"
+	}
+	return ""
+}
+
+// closeVoteLocked writes the closed mark, then posts the one result message (l.mu held).
+// early adds a note to the message. It returns false when the mark could not be written.
+func (sv *server) closeVoteLocked(v *voteRec, now time.Time, note string) bool {
+	text := v.resultText()
+	res := voteFailed
+	if strings.HasPrefix(text, fmt.Sprintf("[vote #%d result] %s", v.ID, votePassed)) {
+		res = votePassed
+	}
+	if note != "" {
+		text += " · closed early: " + note
+	}
+	// mark first: a crash between the two loses the result message but never repeats it
+	if err := sv.votes.writeApply(voteLine{Kind: "closed", Vote: v.ID, Result: res, At: now.In(jst)}); err != nil {
+		fmt.Fprintln(os.Stderr, "a2: votes:", err)
+		return false
+	}
+	if _, err := sv.store.appendReply(v.Channel, systemSender, allTarget, text, "", v.msgID, now); err != nil {
+		fmt.Fprintln(os.Stderr, "a2: vote result:", err)
+	}
+	return true
 }
 
 // --- HTTP ---

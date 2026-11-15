@@ -25,7 +25,7 @@ const usage = `usage: a2 [--token-file FILE] <command> ...   (global, before the
   a2 serve [--addr IP:PORT] [--allow CIDR,...] [--members a,b] [--general-deny FILE] [--tls-cert F --tls-key F]
            [--undelivered-after MIN]   (default 10; 0 = off)
            [--undelivered-skip NAMES]  (comma separated members left out of undelivered notices; default none)
-           [--vote-min-yes N]          (default 3: a vote passes with yes >= N and yes > no)
+           [--vote-min-yes N]          (used only by old votes and option votes; yes/no votes pass on a majority of the channel members)
            [--status-digest MIN]       (default 10: send --status lines go out as one digest per sender; 0 = at once)
            [--dist-dir DIR] [--no-self-update]
   a2 tls init [--dir DIR] [--hosts h1,h2] [--force]
@@ -33,10 +33,11 @@ const usage = `usage: a2 [--token-file FILE] <command> ...   (global, before the
   a2 token new|rotate [--force] [--out PATH] <member>
   a2 token revoke <member>
   a2 token rename <old> <new>           (same token; old name still delivers, with a notice)
-  a2 send [--channel team|general] [--reply-to ID] [--log-only | --status | --needs-reply [--within 30m]] --to <member|all> "<text>"
-  a2 inbox [--channel C] [--peek] [--all] [--since ID|RFC3339|HH:MM] [--from M] [--thread ID]   (filters: cursor not moved)
-  a2 watch [--channel C] [--from-start] [--backlog N] [--wait SECONDS] [--tick-file PATH|off]   (own resume cursor; no cursor = one backlog summary line; writes a liveness stamp every 60 s)
+  a2 send [--channel team|general] [--reply-to ID] [--tag t1,t2] [--log-only | --status | --needs-reply [--within 30m]] --to <member|all> "<text>"
+  a2 inbox [--channel C] [--peek] [--all] [--since ID|RFC3339|HH:MM] [--from M] [--thread ID] [--sent] [--tag t1,t2]   (filters: cursor not moved)
+  a2 watch [--channel C] [--tag t1,t2] [--from-start] [--backlog N] [--wait SECONDS] [--tick-file PATH|off]   (own resume cursor; no cursor = one backlog summary line; writes a liveness stamp every 60 s)
   a2 watch-status [--channel C] [--tick-file PATH] [--stale 15m]   (exit 0 live, 1 stale, 2 missing)
+  a2 tags [--channel C] [--since ID|RFC3339|HH:MM]   (tags in use with counts; read-only)
   a2 members
   a2 liveness-check                     (server machine only: one line per member not alive; for an external monitor)
   a2 receipts <id>                      (per recipient of a message you sent: delivered time or not yet)
@@ -89,6 +90,9 @@ func run(args []string) int {
 	case "watch":
 		autoUpdate(args)
 		err = cmdWatch(args[1:])
+	case "tags":
+		autoUpdate(args)
+		err = cmdTags(args[1:])
 	case "watch-status":
 		err = cmdWatchStatus(args[1:])
 	case "members":

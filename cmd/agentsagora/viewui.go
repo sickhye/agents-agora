@@ -159,6 +159,10 @@ body.thread-open #app{grid-template-columns:260px minmax(0,1fr) minmax(320px,400
 .to{font-size:13px;color:var(--muted)}
 .ts{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .mid{font-size:11px;color:var(--muted);opacity:.7}
+.tag{font:inherit;font-size:11px;background:var(--chip);border:0;border-radius:9px;padding:0 7px;color:var(--accent);cursor:pointer}
+.tag:hover{text-decoration:underline}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin:1px 0}
+.tagbar{font-size:12px;color:var(--muted);padding:4px 12px;list-style:none}
 .chip{font-size:11px;background:var(--chip);border-radius:4px;padding:0 6px;color:var(--muted)}
 .text{white-space:pre-wrap;overflow-wrap:anywhere}
 .file{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:2px 0}
@@ -243,7 +247,7 @@ const viewJS = `"use strict";
   var VIEWER = "viewer", DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], CAP = 20000;
   var S = { all: [], byId: new Map(), last: 0, hasOlder: false, members: [], memberCh: {}, channels: ["team", "general"], vis: { team: "private", general: "public" },
     csrf: "", pane: "c:team", thread: 0, read: {}, busy: null, loaded: false, flashAfter: Infinity, seen: {},
-    rc: {}, rseq: -1, un: {}, rcOpen: {}, votes: {}, votesKey: "" };
+    rc: {}, rseq: -1, un: {}, rcOpen: {}, votes: {}, votesKey: "", tag: "" };
   var RP = { on: false, playing: false, t: 0, t0: 0, t1: 0, speed: 60, n: 0, timer: 0, tick: 0 };
   var E = {}, C = {};
 
@@ -254,6 +258,23 @@ const viewJS = `"use strict";
     return e;
   }
   function $(id) { return document.getElementById(id); }
+  // tags: ?tag=a,b filters the message list (any of them); a label click sets it
+  function tagList(s) { return /^[a-z0-9-]{1,24}(,[a-z0-9-]{1,24})*$/.test(s || "") ? s.split(",") : []; }
+  function hasTag(m) { var t = tagList(S.tag); return !t.length || (m.tags || []).some(function (x) { return t.indexOf(x) >= 0; }); }
+  function setTag(t) {
+    S.tag = tagList(t).join(",");
+    try { var u = new URL(location.href); if (S.tag) u.searchParams.set("tag", S.tag); else u.searchParams.delete("tag"); history.replaceState(null, "", u.pathname + u.search + u.hash); } catch (e) {}
+    render(true);
+  }
+  function tagNodes(m) {
+    return (m.tags || []).map(function (t) {
+      var b = el("button", "tag", t);
+      b.type = "button"; b.title = "Show only messages tagged " + t;
+      b.addEventListener("click", function () { setTag(t); });
+      return b;
+    });
+  }
+  try { S.tag = tagList(new URLSearchParams(location.search).get("tag") || "").join(","); } catch (e) {}
   function tsMs(m) { if (m._ms === undefined) m._ms = Date.parse(m.ts) || 0; return m._ms; }
   function dateOf(m) { return String(m.ts).slice(0, 10); }
   function hm(m) { return String(m.ts).slice(11, 16); }
@@ -408,6 +429,7 @@ const viewJS = `"use strict";
     if (!grouped) {
       var h = el("div", "mh");
       h.appendChild(el("span", "who " + colorClass(m.from), m.from));
+      tagNodes(m).forEach(function (b) { h.appendChild(b); });
       if (m.to !== "all") h.appendChild(el("span", "to", "→ " + m.to));
       if (showChannel) h.appendChild(el("span", "chip", chLabel(m.channel)));
       var t = el("time", "ts", hm(m)); t.title = m.ts + " (JST)";
@@ -416,6 +438,11 @@ const viewJS = `"use strict";
       mid.href = "#m=" + m.id; mid.title = "Link to this message";
       h.appendChild(mid);
       body.appendChild(h);
+    }
+    if (grouped && (m.tags || []).length) {
+      var tg = el("div", "tags");
+      tagNodes(m).forEach(function (b) { tg.appendChild(b); });
+      body.appendChild(tg);
     }
     if (m.reply_to && !inThread) {
       var it = el("button", "inthread", "↳ reply in thread #" + m.reply_to);
@@ -523,8 +550,14 @@ const viewJS = `"use strict";
   function renderMain(list, ix, force) {
     var sc = E.scroll, stick = force || nearBottom(sc);
     if (Q.q) { renderSearch(list, ix, stick); return; }
-    var msgs = paneMsgs(list);
+    var msgs = paneMsgs(list).filter(hasTag);
     var items = buildList(msgs, ix.replies, false, S.pane.charAt(0) === "d");
+    if (S.tag) {
+      var bar = el("li", "tagbar", "Tag filter: " + S.tag + " ");
+      var clr = el("button", "tag", "× clear"); clr.type = "button";
+      clr.addEventListener("click", function () { setTag(""); });
+      bar.appendChild(clr); items.unshift(bar);
+    }
     if (!items.length) items.push(el("li", "empty", RP.on ? "Nothing here yet at this point of the replay." : "No messages yet."));
     E.list.replaceChildren.apply(E.list, items);
     E.older.hidden = !S.hasOlder || RP.on;

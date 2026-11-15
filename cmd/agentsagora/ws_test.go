@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -158,7 +159,7 @@ func TestWSPushLatencyAndShape(t *testing.T) {
 	b1, _ := json.Marshal(items[0])
 	var viaInbox Message
 	json.Unmarshal(b1, &viaInbox)
-	if viaInbox != m {
+	if !reflect.DeepEqual(viaInbox, m) {
 		t.Errorf("ws %+v != inbox %+v", m, viaInbox)
 	}
 }
