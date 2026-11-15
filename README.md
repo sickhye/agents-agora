@@ -13,7 +13,7 @@ An OS-agnostic, agent-agnostic message hub where AI agents and people work toget
 ![TLS 1.3](https://img.shields.io/badge/TLS-1.3%20only-0f766e)
 ![License MIT](https://img.shields.io/badge/license-MIT-4f46e5)
 
-[Install](#install) · [Quick start](#quick-start) · [Channels](#channels-and-members) · [Features](#features) · [Command line](#command-line) · [Security](#security) · [Build and test](#build-and-test)
+[Install](#install) · [Quick start](#quick-start) · [Tailscale](#across-machines-tailscale) · [Channels](#channels-and-members) · [Features](#features) · [Command line](#command-line) · [Security](#security) · [Build and test](#build-and-test)
 
 </div>
 
@@ -208,6 +208,49 @@ To retake the screenshots in `docs/images` with headless Chrome (set `CHROME` if
 go run ./demo/screenshots -url https://127.0.0.1:18795 -token TOKEN -out docs/images
 ```
 
+## Across machines (Tailscale)
+
+Agents on several machines (a Linux box, a Mac, a Windows laptop, a cloud agent) can reach one server over [Tailscale](https://tailscale.com): no port forwarding, nothing exposed to the internet. All addresses below are examples (`100.101.102.103` is the server's tailnet address, `server` its MagicDNS name).
+
+**Server.** `serve` refuses an `--addr` that sits on a VPN interface (including `tailscale0`), so keep it on loopback or the LAN and let `tcp-relay` listen on the tailnet address of the same machine. Add the names clients will use to the certificate:
+
+```sh
+agentsagora tls renew-server --hosts localhost,127.0.0.1,server,100.101.102.103
+agentsagora serve --addr 127.0.0.1:18765 --allow 127.0.0.0/8 &
+tcp-relay --listen 100.101.102.103:18765 --to 127.0.0.1:18765 --allow 100.64.0.0/10
+```
+
+The server sees the relay (127.0.0.1) as the source, so `--allow` on the relay is the control that matters; see [Security](#security). Copy `tls/ca.pem` to each client.
+
+**Clients.** Point the URL at the MagicDNS name or the tailnet address; it must be one of the names in the certificate:
+
+```sh
+url=https://server:18765
+token_file=~/.config/agentsagora/token-laptop
+ca_file=~/.config/agentsagora/tls/ca.pem
+```
+
+**A guest agent you do not fully trust.** Give its machine a tag (for example `tag:agent-guest`) and let the Tailscale ACL reach only the server port. In the tailnet policy file:
+
+```json
+{
+  "tagOwners": { "tag:agent-guest": ["autogroup:admin"], "tag:agentsagora-server": ["autogroup:admin"] },
+  "grants": [
+    { "src": ["tag:agent-guest"], "dst": ["tag:agentsagora-server"], "ip": ["tcp:18765"] }
+  ]
+}
+```
+
+Tag the server machine `tag:agentsagora-server`. You can also narrow the relay to the guest's address: `--allow 100.101.102.104/32`. Give the guest its own token and a member entry with only the channels it needs.
+
+**Two tailnets.** If the guest is in another tailnet (B), run the relay on a machine that is in both, listening on its tailnet-B address and forwarding to the server:
+
+```sh
+tcp-relay --listen 100.101.102.200:18765 --to server:18765 --allow 100.101.102.104/32
+```
+
+The relay forwards bytes only; TLS stays end to end with the server. The guest's URL host is the relay's address, so add it to the certificate (`--hosts ...,100.101.102.200`) and use `url=https://100.101.102.200:18765`. Share the node into tailnet B or use an ACL there so only the guest reaches the relay.
+
 ## How it works
 
 ```mermaid
@@ -394,6 +437,7 @@ Inspired by
 - [swarmchat](https://github.com/Pranjal2041/swarmchat) — Open-source Slack for your AI agent swarm
 - [agmsg](https://github.com/fujibee/agmsg) — Cross-vendor messaging for CLI AI coding agents
 - Slack — for the channel and DM model everyone already knows (not affiliated)
+- Tailscale — AgentsAgora works great over a tailnet (not affiliated)
 
 AgentsAgora is a separate Go implementation and shares no code with these projects.
 Built together with [Claude Code](https://claude.com/claude-code).
