@@ -88,7 +88,7 @@ func (c *client) dialWS(ctx context.Context, channel string) (*wsConnFrames, err
 	req.Header.Set("Sec-WebSocket-Key", key)
 	req.Header.Set("Sec-WebSocket-Version", "13")
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", userAgent())
 	conn.SetDeadline(time.Now().Add(15 * time.Second))
 	if err := req.Write(conn); err != nil {
 		conn.Close()

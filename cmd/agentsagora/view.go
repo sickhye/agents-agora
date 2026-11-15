@@ -361,7 +361,7 @@ func (sv *server) handleViewMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"messages": out, "truncated": truncated,
 		"receipts": rcpts, "undelivered": badge, "rseq": rseqNow,
 		"votes":   sv.viewVotes(), // every vote by message id, counts so far (vote.go)
-		"members": names, "member_channels": mc, "alive": alive, "channels": allChannels, "server": sv.serverStatus(),
+		"members": names, "member_channels": mc, "alive": alive, "channels": allChannels, "channel_info": channelDefs, "server": sv.serverStatus(),
 		"csrf": sv.view.csrfOf(cookieValue(r))})
 }
 
@@ -396,7 +396,7 @@ func (sv *server) handleViewSend(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch {
 	case !slices.Contains(allChannels, ch):
-		err = errCode(http.StatusBadRequest, "unknown channel %q (channels: team, general)", ch)
+		err = errCode(http.StatusBadRequest, "unknown channel %q (channels: %s)", ch, strings.Join(allChannels, ", "))
 	case to == "":
 		err = errCode(http.StatusBadRequest, "unknown recipient \"\"")
 	default:

@@ -95,7 +95,7 @@ func (c *client) do(method, path string, body any, out any) error {
 // doReq adds the token, sends req and decodes a JSON answer into out.
 func (c *client) doReq(req *http.Request, out any) error {
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -162,7 +162,7 @@ func formatLine(m Message) string {
 	if m.Kind != "" { // [log] [status] [digest] [reminder]; plain lines unchanged
 		re += " [" + m.Kind + "]"
 	}
-	return fmt.Sprintf("[a2] #%d [%s] %s %s -> %s%s: %s", m.ID, m.Channel, m.TS, m.From, m.To, re, t)
+	return fmt.Sprintf("[a2] #%d [%s] %s %s -> %s%s: %s", m.ID, channelLabel(m.Channel), m.TS, m.From, m.To, re, t)
 }
 
 // logLineMax is the text length (runes) of a "[log]" line in a2 watch.
@@ -196,13 +196,13 @@ func yourChannels() string {
 	if err := c.do("GET", "/members", nil, &r); err != nil {
 		return "your channels: unknown (server: " + err.Error() + ")"
 	}
-	return fmt.Sprintf("you are %s; your channels: %s (only these are accepted)", r.You, strings.Join(r.Channels, ", "))
+	return fmt.Sprintf("you are %s; your channels: %s (only these are accepted)", r.You, strings.Join(channelLabels(r.Channels), ", "))
 }
 
 func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
 	to := fs.String("to", "", "recipient member or all")
-	channel := fs.String("channel", "", "team (work only) or general (no work talk); default: your first channel")
+	channel := fs.String("channel", "", "team (🔒 private, work only) or general (# public, no work talk); default: your first channel")
 	replyTo := fs.Int64("reply-to", 0, "reply in the thread of this message id (same channel)")
 	logOnly := fs.Bool("log-only", false, "a record (hand-off add/done and the like): a2 watch shows it as one short [log] line")
 	status := fs.Bool("status", false, "a status line: the server may batch it with your other status lines into one digest (OUTCOME: problem / BLOCK / blocked go out at once)")
@@ -295,9 +295,9 @@ func sendResult(req sendReq, m Message) string {
 		if t, err := time.Parse(time.RFC3339, m.Queued); err == nil {
 			due = t.In(jst).Format("15:04")
 		}
-		fmt.Fprintf(&b, "queued status line for %s in %s (goes out in the digest by about %s)\n", m.To, m.Channel, due)
+		fmt.Fprintf(&b, "queued status line for %s in %s (goes out in the digest by about %s)\n", m.To, channelLabel(m.Channel), due)
 	} else {
-		fmt.Fprintf(&b, "sent #%d to %s in %s\n", m.ID, m.To, m.Channel)
+		fmt.Fprintf(&b, "sent #%d to %s in %s\n", m.ID, m.To, channelLabel(m.Channel))
 	}
 	if m.ReplyBy != "" {
 		by := m.ReplyBy
@@ -413,10 +413,11 @@ func cmdMembers(args []string) error {
 	var r struct {
 		You     string `json:"you"`
 		Members []struct {
-			Name     string `json:"name"`
-			HasToken bool   `json:"has_token"`
-			Alive    *bool  `json:"alive"`     // older servers; absent = never seen
-			LastSeen string `json:"last_seen"` // RFC3339
+			Name     string   `json:"name"`
+			Channels []string `json:"channels"`
+			HasToken bool     `json:"has_token"`
+			Alive    *bool    `json:"alive"`     // older servers; absent = never seen
+			LastSeen string   `json:"last_seen"` // RFC3339
 		} `json:"members"`
 	}
 	if err := c.do("GET", "/members", nil, &r); err != nil {
@@ -441,7 +442,11 @@ func cmdMembers(args []string) error {
 			}
 			state += " | " + live
 		}
-		fmt.Printf("%s%s: %s\n", m.Name, mark, state)
+		chs := ""
+		if len(m.Channels) > 0 {
+			chs = " | " + strings.Join(channelLabels(m.Channels), " ")
+		}
+		fmt.Printf("%s%s: %s%s\n", m.Name, mark, state, chs)
 	}
 	return nil
 }
@@ -531,7 +536,7 @@ func cmdPut(args []string) error {
 	if err := c.doReq(req, &out); err != nil {
 		return err
 	}
-	fmt.Printf("shared %s id=%s in %s (%d bytes)\n", out.File.Name, out.File.ID, out.File.Channel, out.File.Size)
+	fmt.Printf("shared %s id=%s in %s (%d bytes)\n", out.File.Name, out.File.ID, channelLabel(out.File.Channel), out.File.Size)
 	return nil
 }
 
@@ -554,7 +559,7 @@ func cmdGet(args []string) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -613,7 +618,7 @@ func cmdFiles(args []string) error {
 		fmt.Println("no files")
 	}
 	for _, f := range r.Files {
-		fmt.Printf("%s [%s] %s %s %s %d bytes %s\n", f.ID, f.Channel, f.TS, f.From, f.MIME, f.Size, f.Name)
+		fmt.Printf("%s [%s] %s %s %s %d bytes %s\n", f.ID, channelLabel(f.Channel), f.TS, f.From, f.MIME, f.Size, f.Name)
 	}
 	return nil
 }

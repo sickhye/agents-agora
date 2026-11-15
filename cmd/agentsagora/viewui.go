@@ -241,7 +241,7 @@ body.login input{width:100%;padding:8px;margin:6px 0 12px;border:1px solid var(-
 const viewJS = `"use strict";
 (function () {
   var VIEWER = "viewer", DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], CAP = 20000;
-  var S = { all: [], byId: new Map(), last: 0, hasOlder: false, members: [], memberCh: {}, channels: ["team", "general"],
+  var S = { all: [], byId: new Map(), last: 0, hasOlder: false, members: [], memberCh: {}, channels: ["team", "general"], vis: { team: "private", general: "public" },
     csrf: "", pane: "c:team", thread: 0, read: {}, busy: null, loaded: false, flashAfter: Infinity, seen: {},
     rc: {}, rseq: -1, un: {}, rcOpen: {}, votes: {}, votesKey: "" };
   var RP = { on: false, playing: false, t: 0, t0: 0, t1: 0, speed: 60, n: 0, timer: 0, tick: 0 };
@@ -258,6 +258,9 @@ const viewJS = `"use strict";
   function dateOf(m) { return String(m.ts).slice(0, 10); }
   function hm(m) { return String(m.ts).slice(11, 16); }
   function jstString(ms) { return new Date(ms + 9 * 3600000).toISOString().slice(0, 19).replace("T", " "); }
+  // Channel visibility comes from the server (channel_info): "#" before a public name, a lock before a private one.
+  function chMark(c) { return S.vis[c] === "private" ? "🔒" : "#"; }
+  function chLabel(c) { return chMark(c) + c; }
   function paneOf(m) { return m.to === "all" ? "c:" + m.channel : "d:" + [m.from, m.to].sort().join("|"); }
   function pairOf(p) { return p.slice(2).split("|"); }
   function others(p) { return pairOf(p).filter(function (x) { return x !== VIEWER; }); }
@@ -328,7 +331,7 @@ const viewJS = `"use strict";
     if (st.unread > 0 && p !== S.pane) b.classList.add("unread");
     if (RP.on && st.fresh) b.classList.add("pulse");
     if (p.charAt(0) === "c") {
-      b.appendChild(el("span", "hash", "#"));
+      b.appendChild(el("span", "hash", chMark(p.slice(2))));
       b.appendChild(el("span", "nm", p.slice(2)));
     } else {
       pairOf(p).forEach(function (n) { b.appendChild(avatar(n, true)); });
@@ -366,7 +369,7 @@ const viewJS = `"use strict";
     var names;
     if (S.pane.charAt(0) === "c") {
       var c = S.pane.slice(2);
-      E.title.textContent = "# " + c;
+      E.title.textContent = chMark(c) + " " + c;
       names = S.members.filter(function (n) { return (S.memberCh[n] || []).indexOf(c) >= 0; });
     } else {
       names = pairOf(S.pane);
@@ -406,7 +409,7 @@ const viewJS = `"use strict";
       var h = el("div", "mh");
       h.appendChild(el("span", "who " + colorClass(m.from), m.from));
       if (m.to !== "all") h.appendChild(el("span", "to", "→ " + m.to));
-      if (showChannel) h.appendChild(el("span", "chip", m.channel));
+      if (showChannel) h.appendChild(el("span", "chip", chLabel(m.channel)));
       var t = el("time", "ts", hm(m)); t.title = m.ts + " (JST)";
       h.appendChild(t);
       var mid = el("a", "mid", "#" + m.id);
@@ -544,7 +547,7 @@ const viewJS = `"use strict";
     items.push(el("li", "thsep", reps.length + (reps.length === 1 ? " reply" : " replies")));
     items = items.concat(buildList(reps, ix.replies, true, false, dateOf(root)));
     E.thList.replaceChildren.apply(E.thList, items);
-    var sub = [el("span", "", "#" + root.channel)];
+    var sub = [el("span", "", chLabel(root.channel))];
     if (root.to !== "all") sub.push(el("span", "", root.from + " ↔ " + root.to));
     E.thSub.replaceChildren.apply(E.thSub, sub);
     if (stick) sc.scrollTop = sc.scrollHeight;
@@ -601,7 +604,7 @@ const viewJS = `"use strict";
     }
     if (S.pane.charAt(0) === "c") {
       var c = S.pane.slice(2);
-      return { channels: [c], tos: ["all"], replyTo: 0, label: "Message #" + c };
+      return { channels: [c], tos: ["all"], replyTo: 0, label: "Message " + chLabel(c) };
     }
     var o = others(S.pane);
     var chs = S.channels.filter(function (ch) { return o.every(function (x) { return (S.memberCh[x] || []).indexOf(ch) >= 0; }); });
@@ -611,15 +614,15 @@ const viewJS = `"use strict";
     var label = o.length > 1 ? "Message " + o.join(" or ") + " (sent as your own DM)" : "Message " + o.join("");
     return { channels: chs, tos: o, replyTo: 0, label: label };
   }
-  function fillSelect(sel, values) {
+  function fillSelect(sel, values, lab) {
     var keep = sel.value;
-    sel.replaceChildren.apply(sel, values.map(function (v) { var o = el("option", "", v); o.value = v; return o; }));
+    sel.replaceChildren.apply(sel, values.map(function (v) { var o = el("option", "", lab ? lab(v) : v); o.value = v; return o; }));
     if (values.indexOf(keep) >= 0) sel.value = keep;
   }
   function fillComposer(kind) {
     var c = C[kind], ctx = composerCtx(kind);
     var chs = ctx ? ctx.channels : [], tos = ctx ? ctx.tos : [];
-    fillSelect(c.ch, chs);
+    fillSelect(c.ch, chs, chLabel);
     if (kind === "main" && chs.length) c.ch.value = chs[0];
     fillSelect(c.to, tos);
     c.chW.hidden = chs.length < 2;
@@ -718,6 +721,7 @@ const viewJS = `"use strict";
           S.members = d.members || [];
           S.memberCh = d.member_channels || {};
           if (d.channels && d.channels.length) S.channels = d.channels;
+          if (d.channel_info) d.channel_info.forEach(function (ci) { S.vis[ci.name] = ci.visibility; });
           fillRename();
           S.hasOlder = !!d.truncated;
         }

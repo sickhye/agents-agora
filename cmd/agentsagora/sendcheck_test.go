@@ -159,7 +159,7 @@ func TestUndeliveredNoticeOnce(t *testing.T) {
 		t.Fatalf("alice inbox %v", ms)
 	}
 	line := formatLine(ns[0])
-	if !strings.HasPrefix(line, fmt.Sprintf("[a2] #%d [team] ", ns[0].ID)) || !strings.HasSuffix(line, " a2-system -> alice: "+want) {
+	if !strings.HasPrefix(line, fmt.Sprintf("[a2] #%d [🔒team] ", ns[0].ID)) || !strings.HasSuffix(line, " a2-system -> alice: "+want) {
 		t.Errorf("line %q", line)
 	}
 	// once: later ticks (the notices themselves are pending now) add nothing
@@ -336,7 +336,7 @@ func TestInboxFilters(t *testing.T) {
 	var rc int
 	got := captureStdout(t, func() { rc = run([]string{"inbox", "--thread", "1", "--from", "alice"}) })
 	lines := strings.Split(strings.TrimSpace(got), "\n")
-	if rc != 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "[a2] #1 [team] ") || !strings.HasSuffix(lines[1], "alice -> all (re #1): re root") {
+	if rc != 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "[a2] #1 [🔒team] ") || !strings.HasSuffix(lines[1], "alice -> all (re #1): re root") {
 		t.Fatalf("cli exit %d %q", rc, got)
 	}
 	got = captureStdout(t, func() { rc = run([]string{"inbox", "--since", "4"}) })

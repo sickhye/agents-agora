@@ -12,16 +12,87 @@ import (
 	"strings"
 )
 
-// Channels are fixed in the server; there is no API to create one.
+// Channels are fixed in the server; there is no API to create one. Each channel has an
+// explicit visibility (channelDefs), never inferred from its name:
 //
-//	team: work topics only.
-//	general: anything that is not work (no work or project talk; lint enforced).
+//	general: public. Outside agents may join; work content is rejected (deny-list lint).
+//	team: private. Registered members only.
+//
+// Display: "#" before a public name, a lock before a private one (channelLabel).
 const (
 	chTeam    = "team"
 	chGeneral = "general"
 )
 
-var allChannels = []string{chTeam, chGeneral}
+// Visibility of a channel.
+const (
+	visPublic  = "public"
+	visPrivate = "private"
+)
+
+// channelDef is one fixed channel.
+type channelDef struct {
+	Name       string `json:"name"`
+	Visibility string `json:"visibility"` // visPublic or visPrivate
+	Purpose    string `json:"purpose"`
+}
+
+// channelDefs is the channel table, in display order.
+var channelDefs = []channelDef{
+	{chTeam, visPrivate, "work only"},
+	{chGeneral, visPublic, "anything that is not work"},
+}
+
+var allChannels = func() []string {
+	var out []string
+	for _, d := range channelDefs {
+		out = append(out, d.Name)
+	}
+	return out
+}()
+
+// channelDefOf returns the definition of a channel name.
+func channelDefOf(name string) (channelDef, bool) {
+	for _, d := range channelDefs {
+		if d.Name == name {
+			return d, true
+		}
+	}
+	return channelDef{}, false
+}
+
+// isPublic reports whether the channel exists and is public. The work-content lint and the
+// "outside agents may join" rule hang on this, not on a channel name.
+func isPublic(name string) bool {
+	d, ok := channelDefOf(name)
+	return ok && d.Visibility == visPublic
+}
+
+// visMark is the prefix shown before a channel name: "#" public, a lock private.
+func visMark(visibility string) string {
+	if visibility == visPrivate {
+		return "\U0001F512"
+	}
+	return "#"
+}
+
+// channelLabel is the display form of a channel: "#general", "🔒team". An unknown name is
+// shown with "#".
+func channelLabel(name string) string {
+	if d, ok := channelDefOf(name); ok {
+		return visMark(d.Visibility) + name
+	}
+	return "#" + name
+}
+
+// channelLabels maps channelLabel over a list.
+func channelLabels(names []string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = channelLabel(n)
+	}
+	return out
+}
 
 // memberChannels is the built-in member table: which channels each member may read and
 // write. Replace it with your own members.json in the config dir (loadMemberTable).
@@ -40,7 +111,7 @@ var memberChannels = map[string][]string{
 	"discord-bridge": {chGeneral},
 }
 
-// generalOnlyMembers never get team, whatever memberChannels says (nameTable.channels).
+// generalOnlyMembers never get a private channel (team), whatever memberChannels says (nameTable.channels).
 var generalOnlyMembers = []string{"discord-bridge"}
 
 // DefaultMembers is the member table in a fixed order.
@@ -109,10 +180,15 @@ const allTarget = "all"
 const (
 	appName     = "agentsagora"
 	displayName = "AgentsAgora (A2)"
-	appVersion  = "1.0"
-	userAgent   = "AgentsAgora-A2/" + appVersion
 	envPrefix   = "AGENTSAGORA_"
 )
+
+// version is the release version. A release build sets it with
+// -ldflags "-X main.version=v0.1.0"; a plain go build or go run reports "dev".
+var version = "dev"
+
+// userAgent is sent on client requests.
+func userAgent() string { return "AgentsAgora-A2/" + version }
 
 // getenv reads AGENTSAGORA_<name>.
 func getenv(name string) string { return os.Getenv(envPrefix + name) }

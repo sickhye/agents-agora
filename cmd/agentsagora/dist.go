@@ -49,7 +49,7 @@ type distFile struct {
 // buildInfo describes the running binary.
 type buildInfo struct {
 	App     string `json:"app"`
-	Version string `json:"version"` // source version label (appVersion)
+	Version string `json:"version"` // release version (-X main.version), "dev" otherwise
 	Commit  string `json:"commit,omitempty"`
 	Build   string `json:"build"`
 	Built   string `json:"built"`
@@ -108,7 +108,7 @@ var self struct {
 // selfInfo hashes the running binary once (at the first call; the server calls it at start).
 func selfInfo() (buildInfo, string, string) {
 	self.once.Do(func() {
-		bi := buildInfo{App: appName, Version: appVersion, OSArch: osArch()}
+		bi := buildInfo{App: appName, Version: version, OSArch: osArch()}
 		if info, ok := debug.ReadBuildInfo(); ok {
 			mod := false
 			for _, s := range info.Settings {

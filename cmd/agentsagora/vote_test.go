@@ -424,11 +424,11 @@ func TestVoteCLI(t *testing.T) {
 	t.Setenv("AGENTSAGORA_TOKEN_FILE", filepath.Join(configDir(), "token-alice"))
 	var code int
 	got := captureStdout(t, func() { code = run([]string{"vote", "new", "--channel", "team", "--hours", "2", "Ship it?"}) })
-	if code != 0 || !strings.HasPrefix(got, "vote #1 opened in team (yes/no, closes ") {
+	if code != 0 || !strings.HasPrefix(got, "vote #1 opened in 🔒team (yes/no, closes ") {
 		t.Fatalf("new: %d %q", code, got)
 	}
 	got = captureStdout(t, func() { code = run([]string{"vote", "new", "Which?", "a", "b"}) })
-	if code != 0 || !strings.HasPrefix(got, "vote #2 opened in team (opt1/opt2, ") {
+	if code != 0 || !strings.HasPrefix(got, "vote #2 opened in 🔒team (opt1/opt2, ") {
 		t.Fatalf("new options: %d %q", code, got)
 	}
 	got = captureStdout(t, func() { code = run([]string{"vote", "1", "yes"}) })
@@ -441,13 +441,13 @@ func TestVoteCLI(t *testing.T) {
 	}
 	got = captureStdout(t, func() { code = run([]string{"vote", "show", "1"}) })
 	lines := strings.Split(strings.TrimSpace(got), "\n")
-	if code != 0 || len(lines) != 5 || !strings.HasPrefix(lines[0], "vote #1 [team] by alice — open (closes ") ||
+	if code != 0 || len(lines) != 5 || !strings.HasPrefix(lines[0], "vote #1 [🔒team] by alice — open (closes ") ||
 		lines[1] != "Question: Ship it?" || !strings.HasPrefix(lines[2], "yes 0 / no 1 (1 voters) · rule: passes when yes >= 3") ||
 		lines[3] != "  alice: no" || lines[4] != "So far: failed" {
 		t.Fatalf("show: %d %q", code, got)
 	}
 	got = captureStdout(t, func() { code = run([]string{"vote", "list", "--open"}) })
-	if lines := strings.Split(strings.TrimSpace(got), "\n"); code != 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "#2 [team] open until ") {
+	if lines := strings.Split(strings.TrimSpace(got), "\n"); code != 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "#2 [🔒team] open until ") {
 		t.Fatalf("list: %d %q", code, got)
 	}
 	for _, bad := range [][]string{{"vote"}, {"vote", "new"}, {"vote", "new", "q", "only-one"}, {"vote", "new", "--hours", "0", "q"}, {"vote", "x", "yes"}, {"vote", "show"}} {

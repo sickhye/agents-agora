@@ -48,7 +48,7 @@ const usage = `usage: a2 [--token-file FILE] <command> ...   (global, before the
   a2 files [--channel C]
   a2 get [--out PATH] <id>
   a2 mcp-stdio
-  a2 version
+  a2 version                            (also --version: print the version)
   a2 update [--check]                   (replace this binary with the server's build; see README)
   a2 view-once dm --notify-command CMD [--dry-run] [--origin URL]   (server host only: send the owner a one-time /view login link, 24 h, via CMD)
 (a2 and agentsagora are the same binary)`
@@ -67,6 +67,9 @@ func run(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, usage)
 		return 2
+	}
+	if args[0] == "--version" || args[0] == "-version" {
+		args[0] = "version" // answers before the member table is read
 	}
 	if err := loadMemberTable(); err != nil {
 		fmt.Fprintln(os.Stderr, "a2:", err)

@@ -176,7 +176,7 @@ func TestPlainSendUnchanged(t *testing.T) {
 		t.Errorf("stored line %s", s)
 	}
 	m := Message{ID: 1, Channel: "team", TS: "t", From: "alice", To: "bob", Text: "plain"}
-	if watchLine(m) != formatLine(m) || formatLine(m) != "[a2] #1 [team] t alice -> bob: plain" {
+	if watchLine(m) != formatLine(m) || formatLine(m) != "[a2] #1 [🔒team] t alice -> bob: plain" {
 		t.Errorf("line %q", watchLine(m))
 	}
 }
@@ -335,10 +335,10 @@ func TestSendKindFlags(t *testing.T) {
 	if err := sendKindFlags(&r, false, true, false, 30*time.Minute, false); err != nil || r.Kind != kindStatus {
 		t.Errorf("%v %+v", err, r)
 	}
-	if s := sendResult(sendReq{}, Message{ID: 7, To: "dave", Channel: "team"}); s != "sent #7 to dave in team\n" {
+	if s := sendResult(sendReq{}, Message{ID: 7, To: "dave", Channel: "team"}); s != "sent #7 to dave in 🔒team\n" {
 		t.Errorf("plain result %q", s)
 	}
-	if s := sendResult(sendReq{Kind: kindStatus}, Message{To: "dave", Channel: "team", Kind: kindStatus, Queued: "2026-11-13T21:10:00+09:00"}); !strings.HasPrefix(s, "queued status line for dave in team") || !strings.Contains(s, "21:10") {
+	if s := sendResult(sendReq{Kind: kindStatus}, Message{To: "dave", Channel: "team", Kind: kindStatus, Queued: "2026-11-13T21:10:00+09:00"}); !strings.HasPrefix(s, "queued status line for dave in 🔒team") || !strings.Contains(s, "21:10") {
 		t.Errorf("queued result %q", s)
 	}
 }

@@ -24,7 +24,7 @@ func TestWatchFirstRunStartsAtNewest(t *testing.T) {
 	l := waitLines(t, out, 2, 3*time.Second)
 	time.Sleep(300 * time.Millisecond)
 	// send-option: one backlog summary line instead of the old messages, then #4
-	if l = out.lines(); len(l) != 2 || !strings.HasPrefix(l[0], "[a2] backlog: 2 messages #1-#2") || !strings.HasPrefix(l[1], "[a2] #4 [team]") {
+	if l = out.lines(); len(l) != 2 || !strings.HasPrefix(l[0], "[a2] backlog: 2 messages #1-#2") || !strings.HasPrefix(l[1], "[a2] #4 [🔒team]") {
 		t.Fatalf("lines %q, want the summary and #4", l)
 	}
 	if s := errOut.b.String(); s != "" {
@@ -85,7 +85,7 @@ func TestWatchFirstRunChannelAndRights(t *testing.T) {
 	send(t, f, "alice", "general", "all", "g2") // #5
 	l := waitLines(t, out, 2, 3*time.Second)
 	time.Sleep(200 * time.Millisecond)
-	if l = out.lines(); len(l) != 2 || !strings.HasPrefix(l[0], "[a2] backlog: 1 messages #1-#1") || !strings.HasPrefix(l[1], "[a2] #5 [general]") {
+	if l = out.lines(); len(l) != 2 || !strings.HasPrefix(l[0], "[a2] backlog: 1 messages #1-#1") || !strings.HasPrefix(l[1], "[a2] #5 [#general]") {
 		t.Fatalf("lines %q", l)
 	}
 
@@ -96,7 +96,7 @@ func TestWatchFirstRunChannelAndRights(t *testing.T) {
 	l = waitLines(t, bout, 2, 3*time.Second)
 	time.Sleep(200 * time.Millisecond)
 	for _, s := range bout.lines() {
-		if strings.Contains(s, "[team]") {
+		if strings.Contains(s, "[🔒team]") {
 			t.Fatalf("general-only member got work: %q", s)
 		}
 	}

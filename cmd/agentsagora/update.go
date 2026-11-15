@@ -80,7 +80,7 @@ func (c *client) download(target string, want distFile, dir string) (string, err
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err

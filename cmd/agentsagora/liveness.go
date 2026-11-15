@@ -372,7 +372,7 @@ func (l *liveness) post(hook, text string) error {
 		return errors.New("bad request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := l.client.Do(req)
 	if err != nil {
 		var ue *url.Error

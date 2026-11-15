@@ -502,7 +502,7 @@ func (sv *server) resolveChannel(member, channel string) (string, error) {
 		return chs[0], nil
 	}
 	if !slices.Contains(allChannels, channel) {
-		return "", errCode(http.StatusBadRequest, "unknown channel %q (channels: team, general)", channel)
+		return "", errCode(http.StatusBadRequest, "unknown channel %q (channels: %s)", channel, strings.Join(allChannels, ", "))
 	}
 	if !canUse(member, channel) {
 		return "", errCode(http.StatusForbidden, "channel %s not allowed for %s", channel, member)
@@ -544,7 +544,7 @@ func (sv *server) checkRecipient(channel, to string) (string, string, error) {
 }
 
 func (sv *server) lint(channel string, texts ...string) error {
-	if channel != chGeneral {
+	if !isPublic(channel) {
 		return nil
 	}
 	if sv.deny == nil {
@@ -877,7 +877,7 @@ func (sv *server) handleInbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (sv *server) handleMembers(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"you": callerOf(r), "your_channels": channelsOf(callerOf(r)), "members": sv.memberList()})
+	writeJSON(w, http.StatusOK, map[string]any{"you": callerOf(r), "your_channels": channelsOf(callerOf(r)), "channel_info": channelDefs, "members": sv.memberList()})
 }
 
 // handlePutFile: POST /files?channel=C&name=N[&to=M], body = raw bytes, Content-Type = MIME.

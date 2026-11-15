@@ -751,7 +751,7 @@ func cmdVoteNew(args []string) error {
 	if len(r.Vote.Options) > 0 {
 		kind = strings.Join(r.Vote.Choices, "/")
 	}
-	fmt.Printf("vote #%d opened in %s (%s, closes %s JST, message #%d; %s)\n", r.Vote.ID, r.Vote.Channel, kind, shortTime(r.Vote.Closes), r.Message.ID, r.Vote.Rule)
+	fmt.Printf("vote #%d opened in %s (%s, closes %s JST, message #%d; %s)\n", r.Vote.ID, channelLabel(r.Vote.Channel), kind, shortTime(r.Vote.Closes), r.Message.ID, r.Vote.Rule)
 	return nil
 }
 
@@ -785,7 +785,7 @@ func voteShowLines(v voteView) []string {
 	if !v.Open {
 		state = "closed (" + shortTime(v.Closes) + " JST)"
 	}
-	out := []string{fmt.Sprintf("vote #%d [%s] by %s — %s", v.ID, v.Channel, v.From, state), "Question: " + v.Question}
+	out := []string{fmt.Sprintf("vote #%d [%s] by %s — %s", v.ID, channelLabel(v.Channel), v.From, state), "Question: " + v.Question}
 	for i, o := range v.Options {
 		out = append(out, fmt.Sprintf("  opt%d: %s", i+1, o))
 	}
@@ -832,7 +832,7 @@ func cmdVoteList(args []string) error {
 		if !v.Open {
 			state = "closed " + v.Result
 		}
-		fmt.Printf("#%d [%s] %s — %s (%d voters) — %s\n", v.ID, v.Channel, state, countsText(v.Choices, v.Counts), v.Voters, oneLine(v.Question))
+		fmt.Printf("#%d [%s] %s — %s (%d voters) — %s\n", v.ID, channelLabel(v.Channel), state, countsText(v.Choices, v.Counts), v.Voters, oneLine(v.Question))
 	}
 	if len(r.Votes) == 0 {
 		fmt.Fprintln(os.Stderr, "a2: no votes")

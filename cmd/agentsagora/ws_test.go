@@ -391,7 +391,7 @@ func TestWatchReconnectResumes(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("lines %q", lines)
 	}
-	for i, want := range []string{"#1 [team]", "#2 [team]", "#3 [team]", "#4 [general]"} {
+	for i, want := range []string{"#1 [🔒team]", "#2 [🔒team]", "#3 [🔒team]", "#4 [#general]"} {
 		if !strings.HasPrefix(lines[i], "[a2] "+want) {
 			t.Errorf("line %d %q, want %s", i, lines[i], want)
 		}

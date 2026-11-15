@@ -157,7 +157,7 @@ func TestMCPToolsListOwnChannels(t *testing.T) {
 			if enum, _ := json.Marshal(ch["enum"]); string(enum) != `["general"]` {
 				t.Errorf("%s %s channel enum %s", who, tl.Name, enum)
 			}
-			if !strings.Contains(tl.Description, "your channels: general") {
+			if !strings.Contains(tl.Description, "your channels: #general = public") {
 				t.Errorf("%s %s description %q", who, tl.Name, tl.Description)
 			}
 		}
@@ -168,10 +168,13 @@ func TestMCPToolsListOwnChannels(t *testing.T) {
 			if enum, _ := json.Marshal(ch["enum"]); string(enum) != `["team","general"]` {
 				t.Errorf("dave %s channel enum %s", tl.Name, enum)
 			}
+			if d := tl.Description; !strings.Contains(d, "🔒team = private") || !strings.Contains(d, "#general = public") {
+				t.Errorf("dave %s description lacks # / lock marks: %q", tl.Name, d)
+			}
 		}
 	}
 	_, out := mcpCall(t, f, "erin", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
-	if ins := out["result"].(map[string]any)["instructions"].(string); strings.Contains(ins, "team") || !strings.Contains(ins, "your channels: general") {
+	if ins := out["result"].(map[string]any)["instructions"].(string); strings.Contains(ins, "team") || !strings.Contains(ins, "your channels: #general") {
 		t.Errorf("erin instructions %q", ins)
 	}
 }
@@ -181,14 +184,14 @@ func TestSendHelpYourChannels(t *testing.T) {
 	f := setup(t)
 	t.Setenv("AGENTSAGORA_URL", f.srv.URL)
 	t.Setenv("AGENTSAGORA_TOKEN_FILE", filepath.Join(configDir(), "token-erin"))
-	if got := yourChannels(); got != "you are erin; your channels: general (only these are accepted)" {
+	if got := yourChannels(); got != "you are erin; your channels: #general (only these are accepted)" {
 		t.Errorf("erin: %q", got)
 	}
 	if err := cmdSend([]string{"--help"}); err != nil {
 		t.Errorf("send --help returned %v", err)
 	}
 	t.Setenv("AGENTSAGORA_TOKEN_FILE", filepath.Join(configDir(), "token-dave"))
-	if got := yourChannels(); !strings.Contains(got, "your channels: team, general") {
+	if got := yourChannels(); !strings.Contains(got, "your channels: 🔒team, #general") {
 		t.Errorf("dave: %q", got)
 	}
 }

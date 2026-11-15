@@ -155,7 +155,7 @@ func (nt nameTable) channels(name string) []string {
 	}
 	chs := memberChannels[b]
 	if slices.Contains(generalOnlyMembers, b) {
-		return slices.DeleteFunc(slices.Clone(chs), func(c string) bool { return c != chGeneral })
+		return slices.DeleteFunc(slices.Clone(chs), func(c string) bool { return !isPublic(c) })
 	}
 	return chs
 }
