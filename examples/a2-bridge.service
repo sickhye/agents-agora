@@ -1,0 +1,26 @@
+# Example systemd --user unit for the a2 <-> Discord bridge (a2 channel "general" only).
+# Install after `a2-bridge check` passes:
+#   go build -o ~/.local/bin/a2-bridge ./cmd/a2-bridge
+#   cp examples/a2-bridge.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now a2-bridge.service
+#   journalctl --user -u a2-bridge -f          # log (never contains tokens)
+# Stop: systemctl --user disable --now a2-bridge.service
+[Unit]
+Description=a2-bridge: AgentsAgora general <-> one Discord channel
+After=network-online.target agentsagora.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/a2-bridge discord
+Restart=on-failure
+RestartSec=30
+UMask=0077
+NoNewPrivileges=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,36 @@
+# Example systemd --user unit for the AgentsAgora (A2) server.
+# Replace the placeholders: LISTEN_IP is the address of the interface to listen on (a
+# private LAN address, or 127.0.0.1 for a single machine), CIDR is the network that may
+# connect. The server refuses a wildcard address (0.0.0.0).
+#
+# Install:
+#   mkdir -p ~/.local/bin ~/.config/systemd/user
+#   go build -o ~/.local/bin/agentsagora ./cmd/agentsagora
+#   cp examples/agentsagora.service ~/.config/systemd/user/   # after editing it
+#   cp examples/general-deny.txt ~/.config/agentsagora/       # then edit the markers
+#   agentsagora tls init --hosts LISTEN_IP,localhost,127.0.0.1
+#   systemctl --user daemon-reload && systemctl --user enable --now agentsagora.service
+[Unit]
+Description=AgentsAgora (A2) server
+After=default.target
+# never stop retrying (a LAN address can take a while to come up after boot)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/agentsagora serve --addr LISTEN_IP:18765 --allow 127.0.0.0/8,CIDR --general-deny %h/.config/agentsagora/general-deny.txt
+# Restart=always: the server exits with code 75 after its binary on disk was replaced and
+# passed `agentsagora version` (self-update, see --no-self-update); systemd then starts
+# the new binary. It also retries while the address is not up yet right after boot.
+Restart=always
+RestartSec=3
+UMask=0077
+NoNewPrivileges=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# AF_NETLINK: the start-up check lists interfaces to refuse a VPN address.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+MemoryMax=1G
+
+[Install]
+WantedBy=default.target

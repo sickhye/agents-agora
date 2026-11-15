@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Example launchd agent for a2-bridge on macOS. Replace USER (and rename the label if you
+  like), copy the binary to ~/bin/a2-bridge, then:
+    cp com.example.a2-bridge.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.a2-bridge.plist
+  Stop: launchctl bootout gui/$(id -u)/com.example.a2-bridge
+  Log:  ~/Library/Logs/a2-bridge.log (never contains tokens)
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.example.a2-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/USER/bin/a2-bridge</string>
+    <string>discord</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/USER/Library/Logs/a2-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/USER/Library/Logs/a2-bridge.log</string>
+</dict>
+</plist>

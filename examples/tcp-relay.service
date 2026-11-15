@@ -1,0 +1,17 @@
+# Example systemd --user unit for tcp-relay: forwards TCP from one address of this machine
+# (for example a VPN interface) to the a2 server, byte for byte (TLS stays end to end).
+# Replace RELAY_IP (address to listen on), SERVER_IP (a2 server) and CIDR (clients allowed).
+[Unit]
+Description=tcp-relay for the AgentsAgora server
+After=default.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/tcp-relay --listen RELAY_IP:18765 --to SERVER_IP:18765 --allow CIDR
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

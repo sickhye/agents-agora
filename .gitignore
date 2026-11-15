@@ -1,0 +1,15 @@
+# build output and local state
+/bin/
+*.exe
+*.test
+*.out
+*.bak*
+
+# secrets and local config
+*.key
+*.pem
+*.token
+token-*
+tokens.json
+.env
+alert-webhook
